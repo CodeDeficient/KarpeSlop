@@ -1,0 +1,49 @@
+{
+  "name": "karpeslop",
+  "version": "1.0.10",
+  "description": "The linter Andrej Karpathy wishes existed. Detects the three axes of AI slop with extreme prejudice.",
+  "type": "module",
+  "bin": {
+    "karpeslop": "./karpeslop-bin.js"
+  },
+  "scripts": {
+    "build": "babel ai-slop-detector.ts --out-dir . --out-file karpeslop-bin.js --extensions \".ts,.tsx\"",
+    "slop": "tsx ai-slop-detector.ts",
+    "slop:quiet": "tsx ai-slop-detector.ts --quiet",
+    "slop:report": "tsx ai-slop-detector.ts && cat ai-slop-report.json"
+  },
+  "files": [
+    "karpeslop-bin.js",
+    "ai-slop-detector.ts",
+    "karpeslop-cli.js",
+    "karpeslop.js",
+    "README.md",
+    "package.json",
+    "LICENSE"
+  ],
+  "keywords": [
+    "karpathy",
+    "ai-slop",
+    "vibe-coding",
+    "typescript",
+    "linter",
+    "code-quality"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "glob": "^11.0.0",
+    "tsx": "^4.19.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CodeDeficient/karpeslop.git"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.28.3",
+    "@babel/core": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}
