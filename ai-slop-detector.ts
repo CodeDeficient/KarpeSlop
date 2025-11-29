@@ -643,7 +643,7 @@ class AISlopDetector {
     // Add KarpeSlop scoring
     const score = this.calculateKarpeSlopScore();
 
-    console.log(`\nKARPATHY SLOPE INDEX™`);
+    console.log(`\nKARPATHY SLOP INDEX™`);
     console.log('═'.repeat(50));
     console.log(`Information Utility (Noise) : ${score.informationUtility} pts`);
     console.log(`Information Quality (Lies)  : ${score.informationQuality} pts`);
