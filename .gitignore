@@ -6,3 +6,4 @@ dist/
 *.log
 final-test/
 thorough-test/
+ai-slop-report.json
