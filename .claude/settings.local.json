@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(node:*)",
+      "Bash(npm link:*)",
+      "Bash(karpeslop:*)",
+      "Bash(Select-Object -First 10)",
+      "Bash(where.exe:*)",
+      "Bash(echo:*)",
+      "Bash(dir:*)",
+      "Bash(npm unlink:*)",
+      "Bash(npx .)",
+      "Bash(npx . --help)",
+      "Bash(./karpeslop-bin.js:*)",
+      "Bash(timeout 5 node:*)",
+      "Bash(npx karpeslop@latest:*)",
+      "Bash(dos2unix:*)",
+      "Bash(git commit:*)",
+      "Bash(npm publish:*)",
+      "Bash(npm pkg fix:*)",
+      "Bash(cat:*)",
+      "Bash(npx karpeslop@1.0.11:*)",
+      "Bash(npx --yes karpeslop@1.0.11)",
+      "Bash(npm view:*)",
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(npm run build:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
