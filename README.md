@@ -24,7 +24,7 @@ npx karpeslop
 npx karpeslop --quiet
 
 # Generate detailed report
-npx karpeslop
+npx karpeslop | tee ai-slop-report.json
 ```
 
 Note: Global installation is not currently supported due to TypeScript runtime requirements. Use `npx karpeslop` for best results.
@@ -40,7 +40,7 @@ Note: Global installation is not currently supported due to TypeScript runtime r
 ## Example Output
 
 ```
-KARPATHY SLOPE INDEX™
+KARPATHY SLOP INDEX™
 ══════════════════════════════════════════════════
 Information Utility (Noise) : 42 pts
 Information Quality (Lies)  : 87 pts

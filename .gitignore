@@ -4,3 +4,5 @@ dist/
 .ai-slop-report.json
 .DS_Store
 *.log
+final-test/
+thorough-test/
