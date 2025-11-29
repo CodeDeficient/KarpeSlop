@@ -1,5 +1,9 @@
 # KarpeSlop
 
+[![npm version](https://badge.fury.io/js/karpeslop.svg)](https://www.npmjs.com/package/karpeslop)
+[![npm downloads](https://img.shields.io/npm/dm/karpeslop.svg)](https://www.npmjs.com/package/karpeslop)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 > "Because `any` is the mind virus of our generation."
 > — probably @karpathy
 
