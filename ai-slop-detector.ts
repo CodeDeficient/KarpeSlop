@@ -2,14 +2,14 @@
 
 /**
  * AI Slop Detection Tool for Food Truck Finder Application
- * 
- * This tool identifies common AI-generated code patterns that represent "AI Slop" 
+ *
+ * This tool identifies common AI-generated code patterns that represent "AI Slop"
  * including excessive use of `any` types, unsafe type assertions, and other problematic patterns.
- * 
+ *
  * Follows industry best practices based on typescript-eslint patterns.
  */
 
-import fs from 'fs';
+import fs, { realpathSync } from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
@@ -782,17 +782,54 @@ class AISlopDetector {
 async function runIfMain() {
   const rootDir = process.cwd();
   const detector = new AISlopDetector(rootDir);
-  
+
   // Parse command line arguments
-    const args = process.argv.slice(2);
-    const quiet = args.includes('--quiet') || args.includes('-q');
-    
+  const args = process.argv.slice(2);
+
+  // Check for help options first
+  if (args.includes('--help') || args.includes('-h') || args.includes('/?')) {
+    console.log(`
+Usage: karpeslop [options]
+
+Options:
+  --help, -h     Show this help message
+  --quiet, -q    Run in quiet mode (only scan core app files)
+  --version, -v  Show version information
+
+Examples:
+  karpeslop                    # Scan all files in current directory
+  karpeslop --quiet            # Scan only core application files
+  karpeslop --help             # Show this help
+
+The tool detects the three axes of AI slop:
+  1. Information Utility (Noise) - Comments, boilerplate, etc.
+  2. Information Quality (Lies)  - Hallucinated imports, assumptions, etc.
+  3. Style / Taste (Soul)        - Overconfident comments, unnecessary complexity
+`);
+    process.exit(0);
+  }
+
+  // Check for version options
+  if (args.includes('--version') || args.includes('-v')) {
+    // Try to get version from package.json
     try {
+      const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
+      const packageData = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+      console.log(`karpeslop/${packageData.version} ${process.platform}-${process.arch} node-${process.version}`);
+    } catch {
+      console.log('karpeslop/unknown');
+    }
+    process.exit(0);
+  }
+
+  const quiet = args.includes('--quiet') || args.includes('-q');
+
+  try {
     const issues = await detector.detect(quiet);
     // Export results to a JSON file for CI/CD integration
     const outputPath = path.join(rootDir, 'ai-slop-report.json');
     detector.exportResults(outputPath);
-    
+
     const exitCode = issues.length > 0 ? 1 : 0;
     process.exit(exitCode);
   } catch (error) {
@@ -801,15 +838,12 @@ async function runIfMain() {
   }
 }
 
-// Check if this is the main module in ES modules
-const currentFile = fileURLToPath(import.meta.url);
-const mainFile = process.argv[1];
-
-if (currentFile === mainFile) {
-  runIfMain().catch(error => {
-    console.error('💥 AI Slop detection failed:', error);
-    process.exit(1);
-  });
-}
+// Execute as CLI tool - this file is designed to be run as a command-line tool
+// The complex main module check has caused issues with npm wrapper scripts
+// Since this is a CLI tool (not a module to be imported), just run when executed
+runIfMain().catch(error => {
+  console.error('💥 AI Slop detection failed:', error);
+  process.exit(1);
+});
 
 export { AISlopDetector, AISlopIssue, DetectionPattern };
