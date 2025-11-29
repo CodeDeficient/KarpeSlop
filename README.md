@@ -17,7 +17,7 @@ Python support coming when the pigs learn to fly.
 The tool is designed to be used directly with npx:
 
 ```bash
-# Full analysis
+# Full analysis - this is the primary method
 npx karpeslop
 
 # Only core files (recommended for CI)
@@ -27,7 +27,7 @@ npx karpeslop --quiet
 npx karpeslop | tee ai-slop-report.json
 ```
 
-Note: Global installation is not currently supported due to TypeScript runtime requirements. Use `npx karpeslop` for best results.
+Note: Global installation may not work consistently due to TypeScript runtime requirements. Use `npx karpeslop` for best results.
 
 ## Features
 
