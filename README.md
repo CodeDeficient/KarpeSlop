@@ -80,6 +80,8 @@ TOTAL KARPE-SLOP SCORE      : 5664 pts
 SUEEEY! Here piggy piggy... this codebase is 100% slop-fed.
 ```
 
+![KarpeSlop Example Output](./Screenshot.png)
+
 ## License
 
 MIT — go forth and purge the slop.
