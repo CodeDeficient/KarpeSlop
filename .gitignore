@@ -7,3 +7,7 @@ dist/
 final-test/
 thorough-test/
 ai-slop-report.json
+CLAUDE.md
+.claude/
+.qwen/
+QWEN.md
