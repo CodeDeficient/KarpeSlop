@@ -12,22 +12,30 @@ The first linter that detects **all three axes of AI slop**:
 Currently speaks fluent **TypeScript / JavaScript / React / Next.js**.
 Python support coming when the pigs learn to fly.
 
-## Usage
-
-The tool is designed to be used directly with npx:
+## Installation
 
 ```bash
-# Full analysis - this is the primary method
+# Run once without installing
 npx karpeslop
 
-# Only core files (recommended for CI)
-npx karpeslop --quiet
-
-# Generate detailed report
-npx karpeslop | tee ai-slop-report.json
+# Or install globally
+npm install -g karpeslop
+karpeslop
 ```
 
-Note: Global installation may not work consistently due to TypeScript runtime requirements. Use `npx karpeslop` for best results.
+## Usage
+
+Run in your project directory:
+
+```bash
+# Full scan (all files)
+npx karpeslop
+
+# Quiet mode - only scan core app files (recommended for CI)
+npx karpeslop --quiet
+
+# The tool generates a detailed JSON report at ./ai-slop-report.json
+```
 
 ## Features
 
