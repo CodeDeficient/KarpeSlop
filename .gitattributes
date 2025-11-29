@@ -1,3 +1,4 @@
 # Ensure binary files use LF line endings even on Windows
 *.js text eol=lf
+*.md text eol=lf
 karpeslop-bin.js text eol=lf
