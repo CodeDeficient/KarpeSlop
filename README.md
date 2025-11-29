@@ -67,19 +67,6 @@ npx karpeslop@latest --version
 - **Import Validation**: Catches hallucinated imports (e.g., React APIs in wrong packages)
 - **Code Quality**: Finds TODOs, assumptions, and poor coding practices
 
-## Example Output
-
-```
-KARPATHY SLOP INDEX™
-══════════════════════════════════════════════════
-Information Utility (Noise) : 42 pts
-Information Quality (Lies)  : 87 pts
-Style / Taste (Soul)        : 5535 pts
-TOTAL KARPE-SLOP SCORE      : 5664 pts
-
-SUEEEY! Here piggy piggy... this codebase is 100% slop-fed.
-```
-
 ![KarpeSlop Example Output](./Screenshot.png)
 
 ## License
