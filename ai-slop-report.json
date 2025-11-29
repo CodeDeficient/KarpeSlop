@@ -1,0 +1,216 @@
+{
+  "timestamp": "2025-11-29T16:16:20.966Z",
+  "totalIssues": 11,
+  "bySeverity": {
+    "critical": 0,
+    "high": 10,
+    "medium": 1,
+    "low": 0
+  },
+  "byType": [
+    {
+      "type": "todo_implementation_placeholder",
+      "count": 1,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 3,
+          "code": "// TODO: implement"
+        }
+      ]
+    },
+    {
+      "type": "todo_comment",
+      "count": 1,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 3,
+          "code": "TODO"
+        }
+      ]
+    },
+    {
+      "type": "any_type_usage",
+      "count": 2,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 4,
+          "code": ": any"
+        },
+        {
+          "file": "test-file.ts",
+          "line": 6,
+          "code": ": any"
+        }
+      ]
+    },
+    {
+      "type": "hedging_uncertainty_comment",
+      "count": 2,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 5,
+          "code": "probably"
+        },
+        {
+          "file": "test-file.ts",
+          "line": 19,
+          "code": "Hopefully"
+        }
+      ]
+    },
+    {
+      "type": "assumption_comment",
+      "count": 2,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 8,
+          "code": "Assuming this"
+        },
+        {
+          "file": "test-file.ts",
+          "line": 19,
+          "code": "Hopefully this"
+        }
+      ]
+    },
+    {
+      "type": "unsafe_type_assertion",
+      "count": 1,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 9,
+          "code": " as any"
+        }
+      ]
+    },
+    {
+      "type": "overconfident_comment",
+      "count": 1,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 13,
+          "code": "// Just"
+        }
+      ]
+    },
+    {
+      "type": "redundant_self_explanatory_comment",
+      "count": 1,
+      "sample": [
+        {
+          "file": "test-file.ts",
+          "line": 24,
+          "code": "const count = count; // assign count"
+        }
+      ]
+    }
+  ],
+  "issues": [
+    {
+      "type": "todo_implementation_placeholder",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 3,
+      "column": 1,
+      "code": "// TODO: implement",
+      "message": "AI gave up and wrote a TODO instead of thinking (Placeholder comments where AI failed to implement)",
+      "severity": "high"
+    },
+    {
+      "type": "todo_comment",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 3,
+      "column": 4,
+      "code": "TODO",
+      "message": "Found TODO/FIXME/HACK comment indicating incomplete implementation. (Detects incomplete implementation markers)",
+      "severity": "medium"
+    },
+    {
+      "type": "any_type_usage",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 4,
+      "column": 27,
+      "code": ": any",
+      "message": "Found 'any' type usage. Replace with specific type or unknown. (Detects : any type annotations)",
+      "severity": "high"
+    },
+    {
+      "type": "hedging_uncertainty_comment",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 5,
+      "column": 20,
+      "code": "probably",
+      "message": "AI hedging its bets — classic sign of low-confidence generation (Uncertain language masked as implementation)",
+      "severity": "high"
+    },
+    {
+      "type": "any_type_usage",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 6,
+      "column": 13,
+      "code": ": any",
+      "message": "Found 'any' type usage. Replace with specific type or unknown. (Detects : any type annotations)",
+      "severity": "high"
+    },
+    {
+      "type": "assumption_comment",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 8,
+      "column": 6,
+      "code": "Assuming this",
+      "message": "AI making unverified assumptions — dangerous in production (Comments indicating unverified assumptions)",
+      "severity": "high"
+    },
+    {
+      "type": "unsafe_type_assertion",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 9,
+      "column": 22,
+      "code": " as any",
+      "message": "Found unsafe 'as any' type assertion. Use proper type guards or validation. (Detects unsafe as any assertions)",
+      "severity": "high"
+    },
+    {
+      "type": "overconfident_comment",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 13,
+      "column": 18,
+      "code": "// Just",
+      "message": "Overconfident comment — AI pretending it understands when it doesn't (Overconfident language indicating false certainty)",
+      "severity": "high"
+    },
+    {
+      "type": "assumption_comment",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 19,
+      "column": 42,
+      "code": "Hopefully this",
+      "message": "AI making unverified assumptions — dangerous in production (Comments indicating unverified assumptions)",
+      "severity": "high"
+    },
+    {
+      "type": "hedging_uncertainty_comment",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 19,
+      "column": 42,
+      "code": "Hopefully",
+      "message": "AI hedging its bets — classic sign of low-confidence generation (Uncertain language masked as implementation)",
+      "severity": "high"
+    },
+    {
+      "type": "redundant_self_explanatory_comment",
+      "file": "C:\\AI\\git-cleanup-temp\\karpeslop\\test-file.ts",
+      "line": 24,
+      "column": 1,
+      "code": "const count = count; // assign count",
+      "message": "Redundant comment explaining variable assignment to itself — peak AI slop (e.g., const count = count; // assign count to count)",
+      "severity": "high"
+    }
+  ]
+}
