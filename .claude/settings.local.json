@@ -25,7 +25,8 @@
       "Bash(npm view:*)",
       "Bash(git push:*)",
       "Bash(git remote:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npm cache clean:*)"
     ],
     "deny": [],
     "ask": []
