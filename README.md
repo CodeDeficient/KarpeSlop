@@ -19,8 +19,8 @@ Python support coming when the pigs learn to fly.
 ## Installation
 
 ```bash
-# Run once without installing
-npx karpeslop
+# Run once without installing (always gets latest version)
+npx karpeslop@latest
 
 # Or install globally
 npm install -g karpeslop
@@ -33,13 +33,31 @@ Run in your project directory:
 
 ```bash
 # Full scan (all files)
-npx karpeslop
+npx karpeslop@latest
 
 # Quiet mode - only scan core app files (recommended for CI)
-npx karpeslop --quiet
+npx karpeslop@latest --quiet
+
+# Show help
+npx karpeslop@latest --help
+
+# Show version
+npx karpeslop@latest --version
 
 # The tool generates a detailed JSON report at ./ai-slop-report.json
 ```
+
+### Command Line Options
+
+- `--help, -h`: Show help message
+- `--quiet, -q`: Run in quiet mode (only scan core app files)
+- `--version, -v`: Show version information
+
+### The Three Axes of AI Slop
+
+1. **Information Utility (Noise)**: Comments, boilerplate, debug logs, etc.
+2. **Information Quality (Lies)**: Hallucinated imports, incorrect assumptions, TODO placeholders, etc.
+3. **Style/Taste (Soul)**: Overconfident comments, unnecessary complexity, "vibe coding" patterns, etc.
 
 ## Features
 
