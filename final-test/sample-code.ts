@@ -1,0 +1,27 @@
+// Sample code with various AI slop patterns for testing
+
+// TODO: implement this properly - classic AI placeholder
+function exampleFunction(): any {
+  // This function probably works but who knows for sure
+  const data: any = { value: "test" };
+  
+  // Assuming this will work as expected
+  const result = data as any;
+  
+  console.log("Debugging info:", result); // debug log with comment
+  
+  return result; // Just return it because obviously it's correct
+}
+
+// Another example with bad patterns
+const fetchData = async () => {
+  const response = fetch("https://api.example.com"); // Missing error handling
+  const data = await response.json(); // Hopefully this works
+  return data;
+};
+
+// Self-explanatory variable assignment
+const count = count; // assign count to count
+
+// Hallucinated React import
+import { useRouter } from 'react'; // This doesn't exist in React!

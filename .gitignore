@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.npmignore
+.ai-slop-report.json
+.DS_Store
+*.log
