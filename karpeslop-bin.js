@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env npx tsx
 
 /**
  * AI Slop Detection Tool for Food Truck Finder Application
@@ -574,35 +574,90 @@ class AISlopDetector {
   }
 
   /**
+   * Consolidate issues by grouping identical issues (same type, file, code, message, severity)
+   * into single entries with a location array
+   */
+  consolidateIssues() {
+    const issueMap = new Map();
+    for (const issue of this.issues) {
+      // Create a unique key for grouping identical issues
+      const key = `${issue.type}|${issue.file}|${issue.code}|${issue.message}|${issue.severity}`;
+      if (issueMap.has(key)) {
+        // Add location to existing consolidated issue
+        const existing = issueMap.get(key);
+        existing.location.push(`${issue.line}:${issue.column}`);
+      } else {
+        // Create new consolidated issue
+        issueMap.set(key, {
+          type: issue.type,
+          file: issue.file,
+          code: issue.code,
+          message: issue.message,
+          severity: issue.severity,
+          location: [`${issue.line}:${issue.column}`]
+        });
+      }
+    }
+    return Array.from(issueMap.values());
+  }
+
+  /**
    * Export results to JSON for further processing
    */
   exportResults(outputPath) {
-    // Group issues by severity
-    const bySeverity = {
-      critical: this.issues.filter(i => i.severity === 'critical'),
-      high: this.issues.filter(i => i.severity === 'high'),
-      medium: this.issues.filter(i => i.severity === 'medium'),
-      low: this.issues.filter(i => i.severity === 'low')
+    // Consolidate issues to avoid repetition
+    const consolidatedIssues = this.consolidateIssues();
+
+    // Helper to count occurrences from consolidated issues
+    const countOccurrences = issues => issues.reduce((sum, issue) => sum + issue.location.length, 0);
+
+    // Group consolidated issues by severity
+    const consolidatedBySeverity = {
+      critical: consolidatedIssues.filter(i => i.severity === 'critical'),
+      high: consolidatedIssues.filter(i => i.severity === 'high'),
+      medium: consolidatedIssues.filter(i => i.severity === 'medium'),
+      low: consolidatedIssues.filter(i => i.severity === 'low')
     };
+
+    // Count total occurrences (sum of all locations)
+    const totalOccurrences = countOccurrences(consolidatedIssues);
+
+    // Group by type and count occurrences
+    const byTypeMap = new Map();
+    for (const issue of consolidatedIssues) {
+      if (!byTypeMap.has(issue.type)) {
+        byTypeMap.set(issue.type, []);
+      }
+      byTypeMap.get(issue.type).push(issue);
+    }
     const results = {
       timestamp: new Date().toISOString(),
-      totalIssues: this.issues.length,
+      // Unique consolidated issues count
+      uniqueIssues: consolidatedIssues.length,
+      // Total occurrences (backwards compatible - same as old totalIssues)
+      totalOccurrences: totalOccurrences,
+      // Occurrence counts by severity (backwards compatible)
       bySeverity: {
-        critical: bySeverity.critical.length,
-        high: bySeverity.high.length,
-        medium: bySeverity.medium.length,
-        low: bySeverity.low.length
+        critical: countOccurrences(consolidatedBySeverity.critical),
+        high: countOccurrences(consolidatedBySeverity.high),
+        medium: countOccurrences(consolidatedBySeverity.medium),
+        low: countOccurrences(consolidatedBySeverity.low)
       },
-      byType: Object.entries(this.getIssuesByType()).map(([type, issues]) => ({
+      // Occurrence counts by type (backwards compatible)
+      byType: Array.from(byTypeMap.entries()).map(([type, issues]) => ({
         type,
-        count: issues.length,
+        // Total occurrences of this issue type
+        occurrences: countOccurrences(issues),
+        // Unique consolidated issues of this type
+        uniqueIssues: issues.length,
         sample: issues.slice(0, 3).map(issue => ({
           file: path.relative(this.rootDir, issue.file),
-          line: issue.line,
+          locations: issue.location.slice(0, 3),
           code: issue.code
         }))
       })),
-      issues: this.issues
+      // Consolidated issues array (new format with location arrays)
+      issues: consolidatedIssues
     };
     fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
     console.log(`\n📈 Results exported to: ${outputPath}`);
