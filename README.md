@@ -72,3 +72,11 @@ npx karpeslop@latest --version
 ## License
 
 MIT — go forth and purge the slop.
+
+## 💝 Support Development
+
+Building and maintaining KarpeSlop takes time. If this tool saved you from shipping slop:
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/CodeDeficient?style=social)](https://github.com/sponsors/CodeDeficient)
+
+[☕ Buy me a coffee](https://github.com/sponsors/CodeDeficient) • Help keep the slop detector alive
