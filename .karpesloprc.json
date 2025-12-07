@@ -1,0 +1,11 @@
+{
+    "customPatterns": [
+        {
+            "id": "test_custom_pattern",
+            "pattern": "CUSTOM_TEST_MARKER",
+            "message": "Custom pattern successfully detected!",
+            "severity": "high",
+            "fix": "This is a test - remove CUSTOM_TEST_MARKER"
+        }
+    ]
+}

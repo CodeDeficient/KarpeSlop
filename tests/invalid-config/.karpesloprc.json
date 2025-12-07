@@ -1,0 +1,10 @@
+{
+    "customPatterns": [
+        {
+            "id": "test_pattern",
+            "pattern": "TEST",
+            "message": "Test message",
+            "severity": "INVALID_SEVERITY"
+        }
+    ]
+}

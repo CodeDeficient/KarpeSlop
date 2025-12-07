@@ -1,0 +1,79 @@
+# KarpeSlop CI/CD Workflow for GitHub Actions
+# Add this file to your project's .github/workflows/ directory
+# It runs on every pull request to detect AI slop before merge
+
+name: KarpeSlop Check
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+
+jobs:
+  slop-check:
+    name: Detect AI Slop
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Run KarpeSlop
+        run: npx karpeslop@latest --quiet --strict
+        continue-on-error: false
+      
+      - name: Upload Slop Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-slop-report
+          path: ai-slop-report.json
+          retention-days: 7
+
+  # Optional: Comment on PR with slop summary
+  comment-on-pr:
+    name: Comment Results
+    runs-on: ubuntu-latest
+    needs: slop-check
+    if: github.event_name == 'pull_request' && failure()
+    
+    steps:
+      - name: Download Slop Report
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-slop-report
+      
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('ai-slop-report.json', 'utf8'));
+            
+            const body = `## 🐷 KarpeSlop Detection Report
+            
+            | Severity | Count |
+            |----------|-------|
+            | Critical | ${report.bySeverity.critical} |
+            | High | ${report.bySeverity.high} |
+            | Medium | ${report.bySeverity.medium} |
+            | Low | ${report.bySeverity.low} |
+            
+            **Total Issues:** ${report.totalOccurrences}
+            
+            ${report.bySeverity.critical > 0 ? '❌ **BLOCKING:** Critical issues detected (hallucinated imports)' : ''}
+            
+            See the full report in the Actions artifacts.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

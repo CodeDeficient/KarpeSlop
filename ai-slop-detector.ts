@@ -46,14 +46,34 @@ interface DetectionPattern {
   message: string;
   severity: AISlopIssue['severity'];
   description: string;
+  fix?: string;           // Phase 2: How to fix this issue
+  learnMore?: string;     // Phase 2: Link to documentation
   skipTests?: boolean;
   skipMocks?: boolean;
+}
+
+// Phase 6: Configuration file support
+interface CustomPatternConfig {
+  id: string;
+  pattern: string;  // Will be converted to RegExp
+  message: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  description?: string;
+  fix?: string;
+  learnMore?: string;
+}
+
+interface KarpeSlopConfig {
+  customPatterns?: CustomPatternConfig[];
+  ignorePaths?: string[];
+  severityOverrides?: Record<string, 'critical' | 'high' | 'medium' | 'low'>;
+  blockOnCritical?: boolean;
 }
 
 class AISlopDetector {
   private issues: AISlopIssue[] = [];
   private targetExtensions = ['.ts', '.tsx', '.js', '.jsx'];
-  
+
   // Core application directories to prioritize in reporting
   private coreAppDirs = ['app/', 'components/', 'lib/', 'hooks/', 'services/'];
   private detectionPatterns: DetectionPattern[] = [
@@ -87,21 +107,27 @@ class AISlopDetector {
       pattern: /import\s*{\s*(useRouter|useParams|useSearchParams|Link|Image|Script)\s*}\s*from\s*['"]react['"]/gi,
       message: "Hallucinated React import — these do NOT exist in 'react'",
       severity: 'critical',
-      description: 'React-specific APIs are NOT in the react package'
+      description: 'React-specific APIs are NOT in the react package',
+      fix: "Import from correct package: 'next/router', 'next/link', 'next/image', 'next/script'",
+      learnMore: 'https://nextjs.org/docs/api-reference/next/router'
     },
     {
       id: 'hallucinated_next_import',
       pattern: /import\s*{\s*(getServerSideProps|getStaticProps|getStaticPaths)\s*}\s*from\s*['"]react['"]/gi,
       message: "Next.js API imported from 'react' — 100% AI hallucination",
       severity: 'critical',
-      description: 'Next.js APIs are NOT in the react package'
+      description: 'Next.js APIs are NOT in the react package',
+      fix: "These are page-level exports, not imports. Export them from your page file directly.",
+      learnMore: 'https://nextjs.org/docs/basic-features/data-fetching'
     },
     {
       id: 'todo_implementation_placeholder',
       pattern: /\/\/\s*(?:TODO|FIXME|HACK).*(?:implement|add|finish|complete|your code|logic|here)/gi,
       message: "AI gave up and wrote a TODO instead of thinking",
       severity: 'high',
-      description: 'Placeholder comments where AI failed to implement'
+      description: 'Placeholder comments where AI failed to implement',
+      fix: "Actually implement the logic, or if blocked, document WHY and create a tracking issue",
+      learnMore: 'https://refactoring.guru/smells/comments'
     },
     {
       id: 'assumption_comment',
@@ -121,7 +147,7 @@ class AISlopDetector {
     },
     {
       id: 'hedging_uncertainty_comment',
-      pattern: /\b(should work|hopefully|probably|might work|try this|i think|seems to|attempting to|looks like|appears to)\b/gi,
+      pattern: /\/\/.*\b(should work|hopefully|probably|might work|try this|i think|seems to|attempting to|looks like|appears to)\b/gi,
       message: "AI hedging its bets — classic sign of low-confidence generation",
       severity: 'high',
       description: 'Uncertain language masked as implementation'
@@ -138,14 +164,54 @@ class AISlopDetector {
       pattern: /\?\s*['"][^'"]+['"]\s*:\s*['"][^'"]+['"]\s*\?\s*['"][^'"]+['"]\s*:\s*['"][^'"]+['"]/g,
       message: "Nested ternary hell — AI trying to look clever",
       severity: 'medium',
-      description: 'Overly complex nested ternary operations'
+      description: 'Overly complex nested ternary operations',
+      fix: "Extract to a switch statement or a lookup object for better readability"
     },
     {
       id: 'magic_css_value',
       pattern: /\b(\d{3,4}px|#\w{6}|rgba?\([^)]+\)|hsl\(\d+)/g,
       message: "Magic CSS value — extract to design token or const",
       severity: 'low',
-      description: 'Hardcoded CSS values that should be constants'
+      description: 'Hardcoded CSS values that should be constants',
+      fix: "Move to CSS variables, theme tokens, or a constants file"
+    },
+
+    // ==================== PHASE 5: REACT-SPECIFIC ANTI-PATTERNS ====================
+    {
+      id: 'useEffect_derived_state',
+      pattern: /useEffect\s*\(\s*\(\s*\)\s*=>\s*\{[^}]*set[A-Z]\w*\([^)]*\)/g,
+      message: "useEffect setting state from props/other state — consider useMemo or compute in render",
+      severity: 'high',
+      description: 'Using useEffect to derive state is often unnecessary',
+      fix: "If state depends only on props/other state, compute directly or use useMemo instead",
+      learnMore: 'https://react.dev/learn/you-might-not-need-an-effect'
+    },
+    {
+      id: 'useEffect_empty_deps_suspicious',
+      pattern: /useEffect\s*\([^,]+,\s*\[\s*\]\s*\)/g,
+      message: "useEffect with empty deps — verify this truly should only run on mount",
+      severity: 'medium',
+      description: 'Empty dependency arrays are often a sign of missing dependencies',
+      fix: "Review if effect depends on any props/state. Use eslint-plugin-react-hooks to catch issues.",
+      learnMore: 'https://react.dev/reference/react/useEffect#specifying-reactive-dependencies'
+    },
+    {
+      id: 'setState_in_loop',
+      pattern: /(?:for|while|forEach|map)\s*\([^)]+\)[^{]*\{[^}]*set[A-Z]\w*\(/g,
+      message: "setState inside a loop — may cause multiple re-renders",
+      severity: 'high',
+      description: 'Calling setState in a loop triggers multiple re-renders',
+      fix: "Batch updates by computing the final state outside the loop, then call setState once",
+      learnMore: 'https://react.dev/learn/queueing-a-series-of-state-updates'
+    },
+    {
+      id: 'useCallback_no_deps',
+      pattern: /useCallback\s*\([^,]+,\s*\[\s*\]\s*\)/g,
+      message: "useCallback with empty deps — the callback never updates",
+      severity: 'medium',
+      description: 'Empty deps means the callback is stale and may use outdated values',
+      fix: "Add all values used inside the callback to the dependency array",
+      learnMore: 'https://react.dev/reference/react/useCallback'
     },
 
     // ==================== ORIGINAL PATTERNS ====================
@@ -154,7 +220,9 @@ class AISlopDetector {
       pattern: /:\s*any\b/g,
       message: "Found 'any' type usage. Replace with specific type or unknown.",
       severity: 'high',
-      description: 'Detects : any type annotations'
+      description: 'Detects : any type annotations',
+      fix: "Replace with 'unknown' and use type guards to narrow, or define a proper interface",
+      learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html'
     },
     {
       id: 'array_any_type',
@@ -182,7 +250,9 @@ class AISlopDetector {
       pattern: /\s+as\s+any\b/g,
       message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
       severity: 'high',
-      description: 'Detects unsafe as any assertions'
+      description: 'Detects unsafe as any assertions',
+      fix: "Use 'as unknown as TargetType' or implement a runtime type guard with validation",
+      learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates'
     },
     {
       id: 'unsafe_double_type_assertion',
@@ -204,7 +274,9 @@ class AISlopDetector {
       message: "Potential missing error handling for promise. Consider adding try/catch or .catch().",
       severity: 'medium',
       description: 'Detects calls that might need error handling',
-      skipTests: true  // Skip in test files since they often have different error handling patterns
+      fix: "Wrap in try/catch or add .catch() handler. Consider React Query or SWR for data fetching.",
+      learnMore: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch',
+      skipTests: true
     },
     {
       id: 'production_console_log',
@@ -231,24 +303,155 @@ class AISlopDetector {
       description: 'Detects unsafe member access patterns'
     }
   ];
-  
-  constructor(private rootDir: string) {}
+
+  private config: KarpeSlopConfig = {};
+  private customIgnorePaths: string[] = [];
+
+  constructor(private rootDir: string) {
+    this.loadConfig();
+  }
+
+  /**
+   * Validate configuration structure (Issue 3 fix)
+   * Basic validation without external dependencies
+   */
+  private validateConfig(config: unknown): KarpeSlopConfig {
+    if (typeof config !== 'object' || config === null) {
+      throw new Error('Config must be an object');
+    }
+
+    const validSeverities = ['critical', 'high', 'medium', 'low'];
+    const cfg = config as Record<string, unknown>;
+
+    // Validate customPatterns
+    if (cfg.customPatterns !== undefined) {
+      if (!Array.isArray(cfg.customPatterns)) {
+        throw new Error('customPatterns must be an array');
+      }
+      for (let i = 0; i < cfg.customPatterns.length; i++) {
+        const pattern = cfg.customPatterns[i] as Record<string, unknown>;
+        if (!pattern.id || typeof pattern.id !== 'string') {
+          throw new Error(`customPatterns[${i}].id must be a string`);
+        }
+        if (!pattern.pattern || typeof pattern.pattern !== 'string') {
+          throw new Error(`customPatterns[${i}].pattern must be a string`);
+        }
+        if (!pattern.message || typeof pattern.message !== 'string') {
+          throw new Error(`customPatterns[${i}].message must be a string`);
+        }
+        if (!pattern.severity || !validSeverities.includes(pattern.severity as string)) {
+          throw new Error(`customPatterns[${i}].severity must be one of: ${validSeverities.join(', ')}`);
+        }
+        // Validate regex is valid
+        try {
+          new RegExp(pattern.pattern as string, 'gi');
+        } catch (e) {
+          throw new Error(`customPatterns[${i}].pattern is not a valid regex: ${pattern.pattern}`);
+        }
+      }
+    }
+
+    // Validate severityOverrides
+    if (cfg.severityOverrides !== undefined) {
+      if (typeof cfg.severityOverrides !== 'object' || cfg.severityOverrides === null) {
+        throw new Error('severityOverrides must be an object');
+      }
+      for (const [key, value] of Object.entries(cfg.severityOverrides as Record<string, unknown>)) {
+        if (!validSeverities.includes(value as string)) {
+          throw new Error(`severityOverrides.${key} must be one of: ${validSeverities.join(', ')}`);
+        }
+      }
+    }
+
+    // Validate ignorePaths
+    if (cfg.ignorePaths !== undefined) {
+      if (!Array.isArray(cfg.ignorePaths)) {
+        throw new Error('ignorePaths must be an array of strings');
+      }
+      for (let i = 0; i < cfg.ignorePaths.length; i++) {
+        if (typeof cfg.ignorePaths[i] !== 'string') {
+          throw new Error(`ignorePaths[${i}] must be a string`);
+        }
+      }
+    }
+
+    return cfg as KarpeSlopConfig;
+  }
+
+  /**
+   * Load configuration from .karpesloprc.json if it exists
+   */
+  private loadConfig(): void {
+    const configPaths = [
+      path.join(this.rootDir, '.karpesloprc.json'),
+      path.join(this.rootDir, '.karpesloprc'),
+      path.join(this.rootDir, 'karpeslop.config.json')
+    ];
+
+    for (const configPath of configPaths) {
+      if (fs.existsSync(configPath)) {
+        try {
+          const configContent = fs.readFileSync(configPath, 'utf-8');
+          const rawConfig = JSON.parse(configContent);
+
+          // Issue 3: Validate config before using
+          this.config = this.validateConfig(rawConfig);
+          console.log(`📋 Loaded config from ${path.basename(configPath)}\n`);
+
+          // Add custom patterns
+          if (this.config.customPatterns) {
+            for (const customPattern of this.config.customPatterns) {
+              this.detectionPatterns.push({
+                id: customPattern.id,
+                pattern: new RegExp(customPattern.pattern, 'gi'),
+                message: customPattern.message,
+                severity: customPattern.severity,
+                description: customPattern.description || customPattern.message,
+                fix: customPattern.fix,
+                learnMore: customPattern.learnMore
+              });
+            }
+            console.log(`   Added ${this.config.customPatterns.length} custom pattern(s)`);
+          }
+
+          // Apply severity overrides
+          if (this.config.severityOverrides) {
+            for (const [patternId, newSeverity] of Object.entries(this.config.severityOverrides)) {
+              const pattern = this.detectionPatterns.find(p => p.id === patternId);
+              if (pattern) {
+                pattern.severity = newSeverity;
+              }
+            }
+          }
+
+          // Store ignore paths
+          if (this.config.ignorePaths) {
+            this.customIgnorePaths = this.config.ignorePaths;
+          }
+
+          break; // Stop after finding first valid config
+        } catch (error) {
+          console.warn(`⚠️  Failed to parse config at ${configPath}:`, error);
+        }
+      }
+    }
+  }
 
   /**
    * Run the AI Slop detection across the codebase
    */
   async detect(quiet: boolean = false) {
     console.log('🔍 Starting AI Slop detection...\n');
-    
+
     // 1. Find all TypeScript/JavaScript files
     const allFiles = this.findAllFiles();
-    
+
     // Filter files based on quiet mode (skip non-core files if quiet is true)
-    const filesToAnalyze = quiet 
+    const filesToAnalyze = quiet
       ? allFiles.filter(file => {
-          const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-          return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
-        })
+        const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
+        return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
+      })
       : allFiles;
 
     console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
@@ -260,7 +463,7 @@ class AISlopDetector {
 
     // 3. Report findings
     this.generateReport(quiet);
-    
+
     return this.issues;
   }
 
@@ -269,7 +472,7 @@ class AISlopDetector {
    */
   private findAllFiles(): string[] {
     const allFiles: string[] = [];
-    
+
     for (const ext of this.targetExtensions) {
       const pattern = path.join(this.rootDir, `**/*${ext}`).replace(/\\/g, '/');
       const files = glob.sync(pattern, {
@@ -295,26 +498,26 @@ class AISlopDetector {
           'improved-ai-slop-detector.ts'  // Exclude the improved detector script to avoid false positives
         ]
       });
-      
+
       // Additional filtering to remove any generated files that may have slipped through
       const filteredFiles = files.filter(file => {
         const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
         return !relativePath.includes('generated/') &&
-               !relativePath.includes('/generated') &&
-               !relativePath.startsWith('generated/') &&
-               !relativePath.includes('coverage/') &&
-               !relativePath.includes('.next/') &&
-               !relativePath.includes('node_modules/') &&
-               !relativePath.includes('dist/') &&
-               !relativePath.includes('build/') &&
-               !relativePath.includes('.git/') &&
-               !relativePath.includes('out/') &&
-               !relativePath.includes('temp/');
+          !relativePath.includes('/generated') &&
+          !relativePath.startsWith('generated/') &&
+          !relativePath.includes('coverage/') &&
+          !relativePath.includes('.next/') &&
+          !relativePath.includes('node_modules/') &&
+          !relativePath.includes('dist/') &&
+          !relativePath.includes('build/') &&
+          !relativePath.includes('.git/') &&
+          !relativePath.includes('out/') &&
+          !relativePath.includes('temp/');
       });
-      
+
       allFiles.push(...filteredFiles);
     }
-    
+
     // Remove duplicates and return
     return [...new Set(allFiles)];
   }
@@ -325,19 +528,19 @@ class AISlopDetector {
   private isFetchCallProperlyHandled(lines: string[], fetchLineIndex: number, fetchCallIndex: number): boolean {
     // Look in a reasonable range around the fetch call to see if it's in a try/catch block
     // or has a .catch() or similar error handling
-    
+
     // First, find the function context containing this fetch call
     let functionStart = -1;
     let functionEnd = -1;
-    
+
     // Look backwards to find the start of the function
     for (let i = fetchLineIndex; i >= Math.max(0, fetchLineIndex - 20); i--) {
       const line = lines[i];
-      if (line.includes('async function') || 
-          line.includes('function') || 
-          line.includes('=>') || 
-          (line.includes('const') && (line.includes('useState') || line.includes('useEffect') || line.includes('useCallback') || line.includes('useMemo'))) ||
-          line.includes('export default function')) {
+      if (line.includes('async function') ||
+        line.includes('function') ||
+        line.includes('=>') ||
+        (line.includes('const') && (line.includes('useState') || line.includes('useEffect') || line.includes('useCallback') || line.includes('useMemo'))) ||
+        line.includes('export default function')) {
         // Check if this looks like the start of our function
         if (line.includes('{') || line.includes('=>')) {
           functionStart = i;
@@ -345,7 +548,7 @@ class AISlopDetector {
         }
       }
       // Check for arrow functions in the line above
-      if (i > 0 && (lines[i-1] + line).includes('=>')) {
+      if (i > 0 && (lines[i - 1] + line).includes('=>')) {
         // Look for functions that end with an opening brace
         if (line.trim().startsWith('{')) {
           functionStart = i;
@@ -357,10 +560,10 @@ class AISlopDetector {
     // Look forwards to find the end of the function block
     let braceCount = 0;
     let inFunction = false;
-    
+
     for (let i = functionStart === -1 ? 0 : functionStart; i < lines.length && i < fetchLineIndex + 20; i++) {
       const line = lines[i];
-      
+
       for (let j = 0; j < line.length; j++) {
         if (line[j] === '{') {
           braceCount++;
@@ -375,26 +578,26 @@ class AISlopDetector {
           }
         }
       }
-      
+
       if (functionEnd !== -1) break;
     }
-    
+
     if (functionStart === -1 || functionEnd === -1) {
       // If we can't find function boundaries, check the current line and nearby lines for error handling
       // Check current line and 2 lines before and after
       const start = Math.max(0, fetchLineIndex - 2);
       const end = Math.min(lines.length, fetchLineIndex + 3);
-      
+
       for (let i = start; i < end; i++) {
         const line = lines[i];
         if (line.includes('.catch(') || line.includes('try {') || line.includes('try{') ||
-            (i > 0 && lines[i-1].includes('try') && line.includes('.catch('))) {
+          (i > 0 && lines[i - 1].includes('try') && line.includes('.catch('))) {
           return true;
         }
       }
       return false;
     }
-    
+
     // Now check the entire function for try/catch or .catch
     for (let i = functionStart; i <= functionEnd; i++) {
       const line = lines[i];
@@ -402,7 +605,7 @@ class AISlopDetector {
         return true;
       }
     }
-    
+
     // Check if the fetch call is part of a promise chain that ends with .catch
     const currentLine = lines[fetchLineIndex];
     if (currentLine.includes('fetch(') && (currentLine.includes('.then(') || currentLine.includes('.catch('))) {
@@ -418,10 +621,10 @@ class AISlopDetector {
         }
       }
     }
-    
+
     return false;
   }
-  
+
   /**
    * Analyze a single file for AI Slop patterns
    */
@@ -430,12 +633,12 @@ class AISlopDetector {
     const lines = content.split('\n');
 
     // Check if this is a test or mock file
-    const isTestFile = filePath.includes('__tests__') || 
-                      filePath.includes('.test.') || 
-                      filePath.includes('.spec.') || 
-                      filePath.includes('__mocks__') ||
-                      filePath.includes('test-');
-    
+    const isTestFile = filePath.includes('__tests__') ||
+      filePath.includes('.test.') ||
+      filePath.includes('.spec.') ||
+      filePath.includes('__mocks__') ||
+      filePath.includes('test-');
+
     const isMockFile = filePath.includes('__mocks__') || filePath.includes('mock');
 
     for (let i = 0; i < lines.length; i++) {
@@ -459,6 +662,23 @@ class AISlopDetector {
         let match;
 
         while ((match = regex.exec(line)) !== null) {
+          // ========== PHASE 1: CONTEXT-AWARE WHITELISTING ==========
+
+          // Skip any pattern that has an explicit eslint-disable or ts-expect-error on the same or previous line
+          if (pattern.id.includes('any') || pattern.id.includes('unsafe')) {
+            const prevLine = i > 0 ? lines[i - 1] : '';
+            if (line.includes('eslint-disable') || line.includes('@ts-expect-error') ||
+              line.includes('@ts-ignore') || prevLine.includes('eslint-disable-next-line') ||
+              prevLine.includes('@ts-expect-error')) {
+              continue; // Developer explicitly acknowledged this
+            }
+          }
+
+          // Skip .d.ts declaration files entirely for 'any' related patterns
+          if (pattern.id.includes('any') && filePath.endsWith('.d.ts')) {
+            continue; // Declaration files often need 'any' for external library types
+          }
+
           // Skip legitimate cases like expect.any() in tests
           if (pattern.id === 'any_type_usage' && (line.includes('expect.any(') || line.includes('jest.fn()'))) {
             continue;
@@ -471,21 +691,21 @@ class AISlopDetector {
 
           // Skip legitimate JSON parsing patterns
           if (pattern.id === 'any_type_usage' &&
-              (line.includes('JSON.parse(') || line.includes('.json') || line.includes('response.json'))) {
+            (line.includes('JSON.parse(') || line.includes('.json') || line.includes('response.json'))) {
             continue;
           }
 
           // Skip legitimate API response handling where 'any' is often unavoidable
           if (pattern.id === 'any_type_usage' &&
-              (line.includes('ApiResponse') || line.includes('apiResponse') ||
-               line.includes('res.json') || line.includes('fetch') || line.includes('axios'))) {
+            (line.includes('ApiResponse') || line.includes('apiResponse') ||
+              line.includes('res.json') || line.includes('fetch') || line.includes('axios'))) {
             continue;
           }
 
           // Skip legitimate uses of 'any' for dynamic data processing
           if (pattern.id === 'any_type_usage' &&
-              (line.includes('data: any') || line.includes('(data: any)') ||
-               line.includes('result: any') || line.includes('response: any'))) {
+            (line.includes('data: any') || line.includes('(data: any)') ||
+              line.includes('result: any') || line.includes('response: any'))) {
             // Check if it's in a function that processes dynamic data
             if (line.includes('parse') || line.includes('process') || line.includes('transform')) {
               continue;
@@ -496,13 +716,13 @@ class AISlopDetector {
           if (pattern.id === 'function_param_any_type') {
             // Skip legitimate uses in data processing functions
             if (line.includes('(data: any)') &&
-                (line.includes('parse') || line.includes('process') || line.includes('transform'))) {
+              (line.includes('parse') || line.includes('process') || line.includes('transform'))) {
               continue;
             }
 
             // Skip legitimate uses in generic functions dealing with external data
             if (line.includes('ApiResponse') || line.includes('apiResponse') ||
-                line.includes('JSON.parse') || line.includes('response: any')) {
+              line.includes('JSON.parse') || line.includes('response: any')) {
               continue;
             }
           }
@@ -538,13 +758,13 @@ class AISlopDetector {
 
             // Skip general debugging logs that might be intentional in development
             if (fullLine.includes('console.log(') &&
-                (fullLine.includes('Debug') || fullLine.includes('debug') || fullLine.includes('debug:'))) {
+              (fullLine.includes('Debug') || fullLine.includes('debug') || fullLine.includes('debug:'))) {
               continue;
             }
 
             // Skip console logs that contain the word 'error' in a non-error context (like error handling)
             if ((fullLine.includes('console.log(') || fullLine.includes('console.info(')) &&
-                (fullLine.includes('error') || fullLine.includes('Error'))) {
+              (fullLine.includes('error') || fullLine.includes('Error'))) {
               continue;
             }
           }
@@ -575,10 +795,10 @@ class AISlopDetector {
           // In quiet mode, skip test and mock files for all patterns except production console logs
           if (quiet && pattern.id !== 'production_console_log') {
             const isTestFile = filePath.includes('__tests__') ||
-                              filePath.includes('.test.') ||
-                              filePath.includes('.spec.') ||
-                              filePath.includes('__mocks__') ||
-                              filePath.includes('test-');
+              filePath.includes('.test.') ||
+              filePath.includes('.spec.') ||
+              filePath.includes('__mocks__') ||
+              filePath.includes('test-');
 
             if (isTestFile) {
               continue;
@@ -616,10 +836,10 @@ class AISlopDetector {
     // Only flag if there are potentially nested control structures in a single line
     // or if the line has multiple indicators of complexity
     if ((ifMatches && ifMatches.length > 1) ||
-        (forMatches && forMatches.length > 1) ||
-        (whileMatches && whileMatches.length > 1) ||
-        (ifMatches && (forMatches || whileMatches)) ||
-        (forMatches && whileMatches)) {
+      (forMatches && forMatches.length > 1) ||
+      (whileMatches && whileMatches.length > 1) ||
+      (ifMatches && (forMatches || whileMatches)) ||
+      (forMatches && whileMatches)) {
       this.issues.push({
         type: 'complex_nested_conditionals',
         file: filePath,
@@ -754,18 +974,30 @@ class AISlopDetector {
 
         Object.entries(byType).forEach(([type, typeIssues]) => {
           const sampleIssue = (typeIssues as AISlopIssue[])[0];
+          // Find the pattern to get fix and learnMore info
+          const patternInfo = this.detectionPatterns.find(p => p.id === type);
+
           console.log(`\n📍 Pattern: ${type}`);
           console.log(`   Description: ${sampleIssue.message.split('(').pop()?.replace(')', '') || ''}`);
-          console.log(`   Sample occurrences: ${typeIssues.length}`);
-          
+
+          // Phase 2: Show fix suggestions and learn more links
+          if (patternInfo?.fix) {
+            console.log(`   💡 Fix: ${patternInfo.fix}`);
+          }
+          if (patternInfo?.learnMore) {
+            console.log(`   📚 Learn more: ${patternInfo.learnMore}`);
+          }
+
+          console.log(`   Sample occurrences: ${(typeIssues as AISlopIssue[]).length}`);
+
           // Show a few specific examples
           (typeIssues as AISlopIssue[]).slice(0, 3).forEach(issue => {
             const relativePath = path.relative(this.rootDir, issue.file);
             console.log(`   → ${relativePath}:${issue.line} - ${issue.code}`);
           });
-          
-          if (typeIssues.length > 3) {
-            console.log(`   ... and ${typeIssues.length - 3} more instances`);
+
+          if ((typeIssues as AISlopIssue[]).length > 3) {
+            console.log(`   ... and ${(typeIssues as AISlopIssue[]).length - 3} more instances`);
           }
         });
 
@@ -787,7 +1019,7 @@ class AISlopDetector {
 
     console.log('\nIssues by type:');
     Object.entries(byType)
-      .sort((a, b) => b[1] as number - a[1] as number) // Sort by count
+      .sort((a, b) => (b[1] as number) - (a[1] as number)) // Sort by count
       .slice(0, 10)
       .forEach(([type, count]) => {
         console.log(`  ${type}: ${count}`);
@@ -805,7 +1037,7 @@ class AISlopDetector {
       const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
       return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
     });
-    
+
     const otherFiles = allFiles.filter(([file]) => {
       const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
       return !this.coreAppDirs.some(dir => relativePath.startsWith(dir));
@@ -813,7 +1045,7 @@ class AISlopDetector {
 
     // Show core application files separately
     const topCoreFiles = coreAppFiles
-      .sort((a, b) => b[1] as number - a[1] as number)
+      .sort((a, b) => (b[1] as number) - (a[1] as number))
       .slice(0, 10);
 
     console.log('\nTop CORE APPLICATION files with AI Slop issues:');
@@ -830,7 +1062,7 @@ class AISlopDetector {
     if (!quiet) {
       // Also show other notable files if there's space
       const topOtherFiles = otherFiles
-        .sort((a, b) => b[1] as number - a[1] as number)
+        .sort((a, b) => (b[1] as number) - (a[1] as number))
         .slice(0, 5);
 
       if (topOtherFiles.length > 0) {
@@ -894,7 +1126,7 @@ class AISlopDetector {
     for (const issue of this.issues) {
       // Create a unique key for grouping identical issues
       const key = `${issue.type}|${issue.file}|${issue.code}|${issue.message}|${issue.severity}`;
-      
+
       if (issueMap.has(key)) {
         // Add location to existing consolidated issue
         const existing = issueMap.get(key)!;
@@ -923,7 +1155,7 @@ class AISlopDetector {
     const consolidatedIssues = this.consolidateIssues();
 
     // Helper to count occurrences from consolidated issues
-    const countOccurrences = (issues: ConsolidatedIssue[]) => 
+    const countOccurrences = (issues: ConsolidatedIssue[]) =>
       issues.reduce((sum, issue) => sum + issue.location.length, 0);
 
     // Group consolidated issues by severity
@@ -1058,11 +1290,18 @@ Usage: karpeslop [options]
 Options:
   --help, -h     Show this help message
   --quiet, -q    Run in quiet mode (only scan core app files)
+  --strict, -s   Exit with code 2 if critical issues (hallucinations) are found
   --version, -v  Show version information
+
+Exit Codes:
+  0 - No issues found
+  1 - Issues found (warnings/errors)
+  2 - Critical issues found (--strict mode only)
 
 Examples:
   karpeslop                    # Scan all files in current directory
   karpeslop --quiet            # Scan only core application files
+  karpeslop --strict           # Block on critical issues (hallucinations)
   karpeslop --help             # Show this help
 
 The tool detects the three axes of AI slop:
@@ -1087,12 +1326,20 @@ The tool detects the three axes of AI slop:
   }
 
   const quiet = args.includes('--quiet') || args.includes('-q');
+  const strict = args.includes('--strict') || args.includes('-s');
 
   try {
     const issues = await detector.detect(quiet);
     // Export results to a JSON file for CI/CD integration
     const outputPath = path.join(rootDir, 'ai-slop-report.json');
     detector.exportResults(outputPath);
+
+    // In strict mode, exit with code 2 if there are any critical issues (hallucinations)
+    const criticalIssues = issues.filter(i => i.severity === 'critical');
+    if (strict && criticalIssues.length > 0) {
+      console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found. Blocking.`);
+      process.exit(2);
+    }
 
     const exitCode = issues.length > 0 ? 1 : 0;
     process.exit(exitCode);
