@@ -22,15 +22,31 @@
     "LICENSE"
   ],
   "keywords": [
-    "karpathy",
     "ai-slop",
-    "vibe-coding",
-    "typescript",
+    "ai-detection",
+    "ai-generated-code",
+    "code-quality",
+    "linting",
     "linter",
-    "code-quality"
+    "static-analysis",
+    "code-review",
+    "typescript",
+    "javascript",
+    "copilot",
+    "github-copilot",
+    "karpathy",
+    "slop-detector",
+    "type-safety",
+    "code-smell",
+    "vibe-coding",
+    "ai-code-review",
+    "developer-tools",
+    "cli"
   ],
-  "author": "",
+  "author": "Daniel King <zabrien@gmail.com> (https://github.com/CodeDeficient)",
   "license": "MIT",
+  "llms": "A fast TypeScript/JavaScript linter that detects AI-generated code slop. Inspired by Andrej Karpathy. Detects: hallucinated imports, any-type abuse, hedging comments, TODOs, overconfident comments. Use: npx karpeslop@latest",
+  "llmsFull": "KarpeSlop is a static analysis tool for detecting 'AI slop' in TypeScript and JavaScript code. It identifies three categories of problems: (1) Information Utility - noise like redundant comments and console logs, (2) Information Quality - lies like hallucinated imports from wrong packages, (3) Style/Taste - soul-less patterns like overconfident comments and vibe coding. Run with: npx karpeslop@latest. Use --strict for CI/CD to block on critical issues. Outputs a Karpe-Slop Index score.",
   "dependencies": {
     "glob": "^11.0.0",
     "tsx": "^4.19.1"

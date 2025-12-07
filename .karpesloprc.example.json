@@ -1,0 +1,30 @@
+{
+    "_comment": "KarpeSlop configuration file - copy to .karpesloprc.json in your project root",
+    "customPatterns": [
+        {
+            "id": "company_banned_import",
+            "pattern": "from\\s+['\"]lodash['\"]",
+            "message": "Use lodash-es for tree-shaking",
+            "severity": "medium",
+            "fix": "Replace 'lodash' with 'lodash-es' or use individual imports like 'lodash/map'"
+        },
+        {
+            "id": "deprecated_api_usage",
+            "pattern": "componentWillMount|componentWillReceiveProps|componentWillUpdate",
+            "message": "Deprecated React lifecycle method detected",
+            "severity": "high",
+            "fix": "Migrate to useEffect or the new lifecycle methods",
+            "learnMore": "https://react.dev/reference/react/Component#legacy-lifecycle-methods"
+        }
+    ],
+    "ignorePaths": [
+        "**/legacy/**",
+        "**/vendor/**",
+        "**/generated/**"
+    ],
+    "severityOverrides": {
+        "magic_css_value": "medium",
+        "production_console_log": "low"
+    },
+    "blockOnCritical": true
+}

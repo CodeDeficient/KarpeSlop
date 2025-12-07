@@ -1,0 +1,27 @@
+#!/bin/sh
+# KarpeSlop Pre-commit Hook
+# Copy this file to your project's .git/hooks/pre-commit (or use husky/lint-staged)
+# Make executable: chmod +x .git/hooks/pre-commit
+
+echo "🔍 Running KarpeSlop AI Slop detection..."
+
+# Run in quiet mode for faster CI checks, with strict mode to block on critical issues
+npx karpeslop@latest --quiet --strict
+
+exit_code=$?
+
+if [ $exit_code -eq 2 ]; then
+  echo ""
+  echo "❌ BLOCKED: Critical AI slop detected (hallucinated imports)."
+  echo "   Fix these issues before committing."
+  exit 1
+elif [ $exit_code -eq 1 ]; then
+  echo ""
+  echo "⚠️  WARNING: AI slop detected, but commit allowed."
+  echo "   Consider addressing these issues soon."
+  # Allow commit but warn (change to 'exit 1' to block on all issues)
+  exit 0
+else
+  echo "✅ No AI slop detected. Clean commit!"
+  exit 0
+fi

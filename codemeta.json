@@ -1,0 +1,60 @@
+{
+    "@context": "https://raw.githubusercontent.com/codemeta/codemeta/2.0/codemeta.jsonld",
+    "@type": "SoftwareSourceCode",
+    "name": "KarpeSlop",
+    "description": "The linter Andrej Karpathy wishes existed. Detects the three axes of AI slop: Information Utility (Noise), Information Quality (Lies), and Style/Taste (Soul). Fast, opinionated static analysis for TypeScript and JavaScript.",
+    "version": "1.0.20",
+    "license": "https://spdx.org/licenses/MIT.html",
+    "codeRepository": "https://github.com/CodeDeficient/karpeslop",
+    "programmingLanguage": [
+        "TypeScript",
+        "JavaScript"
+    ],
+    "runtimePlatform": "Node.js",
+    "operatingSystem": [
+        "Windows",
+        "macOS",
+        "Linux"
+    ],
+    "applicationCategory": "DeveloperApplication",
+    "keywords": [
+        "AI slop detection",
+        "code quality",
+        "linting",
+        "TypeScript",
+        "JavaScript",
+        "static analysis",
+        "AI-generated code",
+        "Copilot",
+        "Karpathy",
+        "type safety"
+    ],
+    "author": {
+        "@type": "Person",
+        "givenName": "Daniel",
+        "familyName": "King",
+        "email": "codedeficient@gmail.com",
+        "url": "https://github.com/CodeDeficient"
+    },
+    "maintainer": {
+        "@type": "Person",
+        "givenName": "Daniel",
+        "familyName": "King",
+        "url": "https://github.com/CodeDeficient"
+    },
+    "dateCreated": "2024-12-05",
+    "dateModified": "2024-12-07",
+    "downloadUrl": "https://www.npmjs.com/package/karpeslop",
+    "installUrl": "https://www.npmjs.com/package/karpeslop",
+    "softwareHelp": "https://github.com/CodeDeficient/karpeslop#readme",
+    "issueTracker": "https://github.com/CodeDeficient/karpeslop/issues",
+    "releaseNotes": "https://github.com/CodeDeficient/karpeslop/releases",
+    "readme": "https://github.com/CodeDeficient/karpeslop#readme",
+    "contIntegration": "https://github.com/CodeDeficient/karpeslop/actions",
+    "developmentStatus": "active",
+    "isAccessibleForFree": true,
+    "funder": {
+        "@type": "Person",
+        "url": "https://github.com/sponsors/CodeDeficient"
+    }
+}

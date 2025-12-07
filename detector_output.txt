@@ -1,0 +1,148 @@
+🔍 Starting AI Slop detection...
+
+📁 Found 583 files to analyze (583 in full mode)
+
+📊 AI Slop Detection Report
+============================
+
+Found 7896 AI Slop issues:
+  Critical: 2
+  High:     1287
+  Medium:   6584
+  Low:      23
+
+
+CRITICAL SEVERITY ISSUES:
+--------------------------------------------------------------------------------
+
+📍 Pattern: hallucinated_react_import
+   Description: React-specific APIs are NOT in the react package
+   Sample occurrences: 2
+   → thorough-test\test-slop.ts:27 - import { useRouter } from 'react'
+   → final-test\sample-code.ts:27 - import { useRouter } from 'react'
+
+HIGH SEVERITY ISSUES:
+--------------------------------------------------------------------------------
+
+📍 Pattern: any_type_usage
+   Description: Detects : any type annotations
+   Sample occurrences: 10
+   → test-temp-file.ts:2 - : any
+   → test-temp-file.ts:6 - : any
+   → test-temp-file.ts:6 - : any
+   ... and 7 more instances
+
+📍 Pattern: unsafe_type_assertion
+   Description: Detects unsafe as any assertions
+   Sample occurrences: 3
+   → test-temp-file.ts:3 -  as any
+   → test-slop.ts:3 -  as any
+   → test-sample.ts:4 -  as any
+
+📍 Pattern: hedging_uncertainty_comment
+   Description: Uncertain language masked as implementation
+   Sample occurrences: 3
+   → test-temp-file.ts:5 - hopefully
+   → test-slop.ts:5 - hopefully
+   → test-sample.ts:8 - probably
+
+📍 Pattern: function_param_any_type
+   Description: Detects function parameters with any type
+   Sample occurrences: 2
+   → test-temp-file.ts:6 - (input: any)
+   → test-slop.ts:6 - (input: any)
+
+📍 Pattern: todo_implementation_placeholder
+   Description: Placeholder comments where AI failed to implement
+   Sample occurrences: 1
+   → test-sample.ts:6 - // TODO: implement
+
+📍 Pattern: overconfident_comment
+   Description: Overconfident language indicating false certainty
+   Sample occurrences: 1
+   → test-sample.ts:9 - // Just
+
+   ... and 1267 more issues of this severity
+
+MEDIUM SEVERITY ISSUES:
+--------------------------------------------------------------------------------
+
+📍 Pattern: todo_comment
+   Description: Detects incomplete implementation markers
+   Sample occurrences: 6
+   → test-sample.ts:6 - TODO
+   → test-consolidation.ts:6 - TODO
+   → test-consolidation.ts:16 - TODO
+   ... and 3 more instances
+
+📍 Pattern: vibe_coded_ternary_abuse
+   Description: Overly complex nested ternary operations
+   Sample occurrences: 1
+   → thorough-test\test-slop.ts:43 - ? "adult" : "minor" ? "child" : "infant"
+
+📍 Pattern: complex_nested_conditionals
+   Description: Highly indented control structure suggests deep nesting. Consider refactoring for readability.
+   Sample occurrences: 13
+   → test-humancode\ts-sample\src\typingsInstallerCore\typingsInstaller.ts:312 - for (const key in npmConfig.devDependencies) {
+   → test-humancode\ts-sample\src\typingsInstallerCore\typingsInstaller.ts:313 - if (
+   → test-humancode\ts-sample\src\typingsInstallerCore\typingsInstaller.ts:322 - if (!packageName) {
+   ... and 10 more instances
+
+   ... and 6564 more issues of this severity
+
+LOW SEVERITY ISSUES:
+--------------------------------------------------------------------------------
+
+📍 Pattern: magic_css_value
+   Description: Hardcoded CSS values that should be constants
+   Sample occurrences: 20
+   → test-humancode\ts-sample\src\testRunner\unittests\tsserver\goToDefinition.ts:98 - #LuaBoo
+   → test-humancode\ts-sample\src\testRunner\unittests\evaluation\esDecoratorsMetadata.ts:45 - #inheri
+   → test-humancode\ts-sample\src\testRunner\unittests\evaluation\esDecoratorsMetadata.ts:81 - #inheri
+   ... and 17 more instances
+
+   ... and 3 more issues of this severity
+
+📈 SUMMARY STATISTICS:
+--------------------------------------------------------------------------------
+
+Issues by type:
+  complex_nested_conditionals: 6020
+  any_type_usage: 574
+  todo_comment: 494
+  unsafe_type_assertion: 205
+  hedging_uncertainty_comment: 128
+  function_param_any_type: 111
+  assumption_comment: 102
+  generic_any_type: 68
+  production_console_log: 56
+  overconfident_comment: 46
+
+Top CORE APPLICATION files with AI Slop issues:
+  No core application files found with issues
+
+Top OTHER files with AI Slop issues (utilities, scripts, etc.):
+  test-humancode\ts-sample\src\compiler\checker.ts: 2804 issues
+  test-humancode\ts-sample\src\compiler\scanner.ts: 275 issues
+  test-humancode\ts-sample\src\compiler\parser.ts: 254 issues
+  test-humancode\ts-sample\src\harness\fourslashImpl.ts: 150 issues
+  test-humancode\ts-sample\src\compiler\utilities.ts: 138 issues
+
+KARPATHY SLOP INDEX™
+══════════════════════════════════════════════════
+Information Utility (Noise) : 1835 pts
+Information Quality (Lies)  : 2976 pts
+Style / Taste (Soul)        : 30066 pts
+TOTAL KARPE-SLOP SCORE      : 34877 pts
+
+SUEEEY! Here piggy piggy... this codebase is 100% slop-fed.
+
+🔧 Next Steps:
+=============
+1. Address critical and high severity issues first
+2. Focus on removing `any` types and replacing with proper types
+3. Add proper error handling to asynchronous operations
+4. Refactor complex functions for better readability
+5. Remove development artifacts like TODO comments and console logs
+
+📈 Results exported to: C:\AI\git-cleanup-temp\karpeslop\ai-slop-report.json
