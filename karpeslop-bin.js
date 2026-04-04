@@ -777,27 +777,75 @@ class AISlopDetector {
     let braceDepth = 0;
     let inCatchBlock = false;
     let catchBlockDepth = -1;
+    let nestedDepth = 0;
+    let pendingExit = false;
     for (let i = 0; i <= lineIndex; i++) {
       const line = lines[i];
+      const hasCatch = line.includes('catch (') || line.includes('catch(');
+      const catchOnSameLineAsCloseBrace = hasCatch && line.trim().startsWith('}');
       for (let j = 0; j < line.length; j++) {
         if (line[j] === '{') {
+          if (inCatchBlock && !catchOnSameLineAsCloseBrace) {
+            if (braceDepth >= catchBlockDepth) {
+              nestedDepth++;
+            }
+          }
           braceDepth++;
         } else if (line[j] === '}') {
           braceDepth--;
-          if (inCatchBlock && braceDepth < catchBlockDepth) {
-            inCatchBlock = false;
+          if (inCatchBlock) {
+            if (nestedDepth > 0) {
+              nestedDepth--;
+              if (nestedDepth === 0) {
+                pendingExit = true;
+              }
+            } else if (braceDepth <= catchBlockDepth) {
+              inCatchBlock = false;
+              nestedDepth = 0;
+              pendingExit = false;
+            }
           }
         }
       }
-      if (line.includes('catch (') || line.includes('catch(')) {
+      if (pendingExit) {
+        pendingExit = false;
+      }
+      if (hasCatch) {
         if (line.includes('{')) {
-          inCatchBlock = true;
-          catchBlockDepth = braceDepth - 1;
+          if (catchOnSameLineAsCloseBrace) {
+            const closeBraceIdx = line.indexOf('}');
+            const catchIdx = line.indexOf('catch');
+            const openBraceIdx = line.indexOf('{', catchIdx);
+            if (closeBraceIdx !== -1 && closeBraceIdx < catchIdx && openBraceIdx > catchIdx) {
+              braceDepth--;
+            }
+            for (let j = 0; j < openBraceIdx; j++) {
+              if (line[j] === '{') braceDepth++;
+            }
+            for (let j = openBraceIdx + 1; j < line.length; j++) {
+              if (line[j] === '{') nestedDepth++;else if (line[j] === '}') {
+                nestedDepth--;
+                if (nestedDepth === 0) {
+                  pendingExit = true;
+                }
+              }
+            }
+            inCatchBlock = true;
+            catchBlockDepth = braceDepth;
+            nestedDepth = 0;
+          } else {
+            inCatchBlock = true;
+            catchBlockDepth = braceDepth - 1;
+            nestedDepth = 0;
+            pendingExit = false;
+          }
         } else {
           for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
             if (lines[j].includes('{')) {
               inCatchBlock = true;
               catchBlockDepth = braceDepth;
+              nestedDepth = 0;
+              pendingExit = false;
               break;
             }
           }
