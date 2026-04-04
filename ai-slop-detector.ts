@@ -9,7 +9,7 @@
  * Follows industry best practices based on typescript-eslint patterns.
  */
 
-import fs, { realpathSync } from 'fs';
+import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
@@ -140,7 +140,7 @@ class AISlopDetector {
     // ==================== AXIS 3: STYLE / TASTE (The Vibe Check) ====================
     {
       id: 'overconfident_comment',
-      pattern: /\/\/\s*(obviously|clearly|simply|just|easy|trivial|basically|literally|of course|naturally|certainly|surely)\b/gi,
+      pattern: /\/\/.*\b(obviously|clearly|simply|just|easy|trivial|basically|literally|of course|naturally|certainly|surely)\b/gi,
       message: "Overconfident comment — AI pretending it understands when it doesn't",
       severity: 'high',
       description: 'Overconfident language indicating false certainty'
@@ -169,7 +169,7 @@ class AISlopDetector {
     },
     {
       id: 'magic_css_value',
-      pattern: /\b(\d{3,4}px|#\w{6}|rgba?\([^)]+\)|hsl\(\d+)/g,
+      pattern: /(\d{3,4}px|#[0-9a-fA-F]{3,8}\b|rgba?\([^)]+\)|hsl\(\d+)/g,
       message: "Magic CSS value — extract to design token or const",
       severity: 'low',
       description: 'Hardcoded CSS values that should be constants',
@@ -270,7 +270,7 @@ class AISlopDetector {
     },
     {
       id: 'missing_error_handling',
-      pattern: /(fetch|axios|http)\s*\(/g,
+      pattern: /\b(fetch|axios|http)\s*\(/g,
       message: "Potential missing error handling for promise. Consider adding try/catch or .catch().",
       severity: 'medium',
       description: 'Detects calls that might need error handling',
@@ -289,7 +289,7 @@ class AISlopDetector {
     },
     {
       id: 'todo_comment',
-      pattern: /(TODO|FIXME|HACK|XXX|BUG)\b/g,
+      pattern: /\b(TODO|FIXME|HACK|XXX|BUG)\b/g,
       message: "Found TODO/FIXME/HACK comment indicating incomplete implementation.",
       severity: 'medium',
       description: 'Detects incomplete implementation markers'
@@ -492,10 +492,10 @@ class AISlopDetector {
           '**/coverage/**', // Coverage reports
           '**/out/**',     // Next.js output directory
           '**/temp/**',    // Temporary files
-          '**/lib/**',     // Generated library files
           'scripts/ai-slop-detector.ts',  // Exclude the detector script itself to avoid false positives
           'ai-slop-detector.ts',  // Also exclude when in root directory
-          'improved-ai-slop-detector.ts'  // Exclude the improved detector script to avoid false positives
+          'improved-ai-slop-detector.ts',  // Exclude the improved detector script to avoid false positives
+          ...this.customIgnorePaths
         ]
       });
 
@@ -525,7 +525,7 @@ class AISlopDetector {
   /**
    * Check if a fetch call is properly handled with try/catch or .catch()
    */
-  private isFetchCallProperlyHandled(lines: string[], fetchLineIndex: number, fetchCallIndex: number): boolean {
+  private isFetchCallProperlyHandled(lines: string[], fetchLineIndex: number): boolean {
     // Look in a reasonable range around the fetch call to see if it's in a try/catch block
     // or has a .catch() or similar error handling
 
@@ -536,10 +536,11 @@ class AISlopDetector {
     // Look backwards to find the start of the function
     for (let i = fetchLineIndex; i >= Math.max(0, fetchLineIndex - 20); i--) {
       const line = lines[i];
+      const isReactHook = line.includes('const') && (line.includes('useState') || line.includes('useEffect') || line.includes('useCallback') || line.includes('useMemo'));
       if (line.includes('async function') ||
         line.includes('function') ||
         line.includes('=>') ||
-        (line.includes('const') && (line.includes('useState') || line.includes('useEffect') || line.includes('useCallback') || line.includes('useMemo'))) ||
+        isReactHook ||
         line.includes('export default function')) {
         // Check if this looks like the start of our function
         if (line.includes('{') || line.includes('=>')) {
@@ -729,21 +730,36 @@ class AISlopDetector {
 
           // Special handling for missing error handling - look for properly handled fetch calls
           if (pattern.id === 'missing_error_handling') {
+            const fullLine = line.trim();
+            // Skip matches inside comment lines (single-line, JSDoc, block)
+            if (fullLine.startsWith('//') || fullLine.startsWith('*') || fullLine.startsWith('/*')) {
+              continue;
+            }
             // Check if this fetch call is part of a properly handled async function
-            const isProperlyHandled = this.isFetchCallProperlyHandled(lines, i, match.index);
+            const isProperlyHandled = this.isFetchCallProperlyHandled(lines, i);
             if (isProperlyHandled) {
-              continue; // Skip this fetch call as it's properly handled
+              continue;
             }
           }
 
           // Special handling for unsafe_double_type_assertion - skip legitimate UI library patterns
           if (pattern.id === 'unsafe_double_type_assertion') {
-            // Check the full line context to identify potentially legitimate patterns
             const fullLine = line.trim();
-            // Skip patterns that are actually safe (as unknown as Type) since we changed the regex
-            // but double-check to be extra sure
+            // Skip patterns that are actually safe (as unknown as Type)
             if (fullLine.includes('as unknown as')) {
-              continue; // This is actually safe - skip it
+              continue;
+            }
+            // Skip matches inside comment lines (e.g., "as soon as React")
+            if (fullLine.startsWith('//') || fullLine.startsWith('*') || fullLine.startsWith('/*')) {
+              continue;
+            }
+            // Skip matches where the first word after "as" is a common English word
+            // indicating natural language rather than a type assertion
+            // e.g., "as soon as React hydrates" — "soon" is English, not a type
+            const firstWord = match[0].match(/^as\s+(\w+)/i)?.[1]?.toLowerCase();
+            const englishWords = ['soon', 'quick', 'quickly', 'fast', 'smooth', 'long', 'much', 'little', 'well', 'good', 'bad', 'easy', 'hard', 'simple', 'clear', 'many', 'few', 'close', 'far', 'near'];
+            if (firstWord && englishWords.includes(firstWord)) {
+              continue;
             }
           }
 
@@ -754,6 +770,20 @@ class AISlopDetector {
             // Skip console.error logs inside catch blocks (legitimate error handling)
             if (fullLine.includes('console.error(') && this.isInTryCatchBlock(lines, i)) {
               continue;
+            }
+
+            // Skip console calls guarded by a conditional on the same line
+            // e.g., if (isDev) console.log('debug');
+            if (/^if\s*\(/.test(fullLine)) {
+              continue;
+            }
+
+            // Skip console calls inside a conditional block opened on a prior line
+            if (i > 0) {
+              const prevLine = lines[i - 1].trim();
+              if (/^if\s*\(/.test(prevLine) && !prevLine.includes('function') && (prevLine.includes('{') || fullLine.startsWith('{') === false)) {
+                continue;
+              }
             }
 
             // Skip general debugging logs that might be intentional in development
@@ -791,6 +821,8 @@ class AISlopDetector {
               continue;
             }
           }
+
+
 
           // In quiet mode, skip test and mock files for all patterns except production console logs
           if (quiet && pattern.id !== 'production_console_log') {
@@ -877,57 +909,91 @@ class AISlopDetector {
    * Used to determine if console.error is legitimate error handling
    */
   private isInTryCatchBlock(lines: string[], lineIndex: number): boolean {
-    // Look backwards from the given line to find try/catch blocks
-    let tryBlockDepth = 0;
-    let catchBlockStartLine = -1;
+    let braceDepth = 0;
+    let inCatchBlock = false;
+    let catchBlockDepth = -1;
+    let nestedDepth = 0;
+    let pendingExit = false;
 
-    // Track opening and closing braces to understand block scope
-    for (let i = lineIndex; i >= 0; i--) {
+    for (let i = 0; i <= lineIndex; i++) {
       const line = lines[i];
+      const hasCatch = line.includes('catch (') || line.includes('catch(');
+      const catchOnSameLineAsCloseBrace = hasCatch && line.trim().startsWith('}');
 
-      // Check for catch blocks (which are often where error logging happens)
-      if (line.includes('catch (')) {
-        catchBlockStartLine = i;
-        // Find the opening brace of the catch block
-        if (line.includes('{')) {
-          return true;
-        } else {
-          // If the catch is on its own line, the next line with { is the start
-          for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
-            if (lines[j].includes('{')) {
-              return true;
+      for (let j = 0; j < line.length; j++) {
+        if (line[j] === '{') {
+          if (inCatchBlock && !catchOnSameLineAsCloseBrace) {
+            if (braceDepth >= catchBlockDepth) {
+              nestedDepth++;
+            }
+          }
+          braceDepth++;
+        } else if (line[j] === '}') {
+          braceDepth--;
+          if (inCatchBlock) {
+            if (nestedDepth > 0) {
+              nestedDepth--;
+              if (nestedDepth === 0) {
+                pendingExit = true;
+              }
+            } else if (braceDepth <= catchBlockDepth) {
+              inCatchBlock = false;
+              nestedDepth = 0;
+              pendingExit = false;
             }
           }
         }
       }
 
-      // Check for try blocks
-      if (line.includes('try {') || (line.includes('try') && line.includes('{'))) {
-        if (catchBlockStartLine > i) {
-          return true; // We found a try block that encompasses the current line
-        }
+      if (pendingExit) {
+        pendingExit = false;
       }
 
-      // More sophisticated brace tracking to identify block depth
-      const openBraces = (line.match(/{/g) || []).length;
-      const closeBraces = (line.match(/}/g) || []).length;
-
-      if (openBraces > closeBraces) {
-        tryBlockDepth++;
-      } else if (closeBraces > openBraces) {
-        tryBlockDepth = Math.max(0, tryBlockDepth - closeBraces + openBraces);
-      }
-
-      // If we're at top level (depth 0) and haven't found a try/catch, we're outside
-      if (tryBlockDepth === 0) {
-        // Check if there was a catch block before we exited
-        if (catchBlockStartLine > i) {
-          return true;
+      if (hasCatch) {
+        if (line.includes('{')) {
+          if (catchOnSameLineAsCloseBrace) {
+            const closeBraceIdx = line.indexOf('}');
+            const catchIdx = line.indexOf('catch');
+            const openBraceIdx = line.indexOf('{', catchIdx);
+            if (closeBraceIdx !== -1 && closeBraceIdx < catchIdx && openBraceIdx > catchIdx) {
+              braceDepth--;
+            }
+            for (let j = 0; j < openBraceIdx; j++) {
+              if (line[j] === '{') braceDepth++;
+            }
+            for (let j = openBraceIdx + 1; j < line.length; j++) {
+              if (line[j] === '{') nestedDepth++;
+              else if (line[j] === '}') {
+                nestedDepth--;
+                if (nestedDepth === 0) {
+                  pendingExit = true;
+                }
+              }
+            }
+            inCatchBlock = true;
+            catchBlockDepth = braceDepth;
+            nestedDepth = 0;
+          } else {
+            inCatchBlock = true;
+            catchBlockDepth = braceDepth - 1;
+            nestedDepth = 0;
+            pendingExit = false;
+          }
+        } else {
+          for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+            if (lines[j].includes('{')) {
+              inCatchBlock = true;
+              catchBlockDepth = braceDepth;
+              nestedDepth = 0;
+              pendingExit = false;
+              break;
+            }
+          }
         }
       }
     }
 
-    return false;
+    return inCatchBlock;
   }
 
   /**
@@ -1103,6 +1169,13 @@ class AISlopDetector {
   }
 
   /**
+   * Get the current configuration
+   */
+  getConfig(): KarpeSlopConfig {
+    return { ...this.config };
+  }
+
+  /**
    * Get the number of issues found
    */
   getIssueCount(): number {
@@ -1212,20 +1285,6 @@ class AISlopDetector {
     console.log(`\n📈 Results exported to: ${outputPath}`);
   }
 
-  /**
-   * Get issues grouped by type
-   */
-  private getIssuesByType(): Record<string, AISlopIssue[]> {
-    const byType: Record<string, AISlopIssue[]> = {};
-    this.issues.forEach(issue => {
-      if (!byType[issue.type]) {
-        byType[issue.type] = [];
-      }
-      byType[issue.type].push(issue);
-    });
-    return byType;
-  }
-
 
 
 
@@ -1325,8 +1384,8 @@ The tool detects the three axes of AI slop:
     process.exit(0);
   }
 
-  const quiet = args.includes('--quiet') || args.includes('-q');
-  const strict = args.includes('--strict') || args.includes('-s');
+    const quiet = args.includes('--quiet') || args.includes('-q');
+    const strict = args.includes('--strict') || args.includes('-s') || !!detector.getConfig().blockOnCritical;
 
   try {
     const issues = await detector.detect(quiet);
