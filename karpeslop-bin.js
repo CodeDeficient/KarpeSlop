@@ -78,7 +78,7 @@ class AISlopDetector {
   // ==================== AXIS 3: STYLE / TASTE (The Vibe Check) ====================
   {
     id: 'overconfident_comment',
-    pattern: /\/\/\s*(obviously|clearly|simply|just|easy|trivial|basically|literally|of course|naturally|certainly|surely)\b/gi,
+    pattern: /\/\/.*\b(obviously|clearly|simply|just|easy|trivial|basically|literally|of course|naturally|certainly|surely)\b/gi,
     message: "Overconfident comment — AI pretending it understands when it doesn't",
     severity: 'high',
     description: 'Overconfident language indicating false certainty'
@@ -103,7 +103,7 @@ class AISlopDetector {
     fix: "Extract to a switch statement or a lookup object for better readability"
   }, {
     id: 'magic_css_value',
-    pattern: /\b(\d{3,4}px|#\w{6}|rgba?\([^)]+\)|hsl\(\d+)/g,
+    pattern: /(\d{3,4}px|#[0-9a-fA-F]{3,8}\b|rgba?\([^)]+\)|hsl\(\d+)/g,
     message: "Magic CSS value — extract to design token or const",
     severity: 'low',
     description: 'Hardcoded CSS values that should be constants',
@@ -399,8 +399,6 @@ class AISlopDetector {
         // Next.js output directory
         '**/temp/**',
         // Temporary files
-        '**/lib/**',
-        // Generated library files
         'scripts/ai-slop-detector.ts',
         // Exclude the detector script itself to avoid false positives
         'ai-slop-detector.ts',
@@ -425,7 +423,7 @@ class AISlopDetector {
   /**
    * Check if a fetch call is properly handled with try/catch or .catch()
    */
-  isFetchCallProperlyHandled(lines, fetchLineIndex, fetchCallIndex) {
+  isFetchCallProperlyHandled(lines, fetchLineIndex) {
     // Look in a reasonable range around the fetch call to see if it's in a try/catch block
     // or has a .catch() or similar error handling
 
@@ -608,7 +606,7 @@ class AISlopDetector {
               continue;
             }
             // Check if this fetch call is part of a properly handled async function
-            const isProperlyHandled = this.isFetchCallProperlyHandled(lines, i, match.index);
+            const isProperlyHandled = this.isFetchCallProperlyHandled(lines, i);
             if (isProperlyHandled) {
               continue;
             }
@@ -767,55 +765,37 @@ class AISlopDetector {
    * Used to determine if console.error is legitimate error handling
    */
   isInTryCatchBlock(lines, lineIndex) {
-    // Look backwards from the given line to find try/catch blocks
-    let tryBlockDepth = 0;
-    let catchBlockStartLine = -1;
-
-    // Track opening and closing braces to understand block scope
-    for (let i = lineIndex; i >= 0; i--) {
+    let braceDepth = 0;
+    let inCatchBlock = false;
+    let catchBlockEndLine = -1;
+    for (let i = 0; i <= lineIndex; i++) {
       const line = lines[i];
-
-      // Check for catch blocks (which are often where error logging happens)
-      if (line.includes('catch (')) {
-        catchBlockStartLine = i;
-        // Find the opening brace of the catch block
+      for (let j = 0; j < line.length; j++) {
+        if (line[j] === '{') {
+          braceDepth++;
+        } else if (line[j] === '}') {
+          braceDepth--;
+          if (inCatchBlock && braceDepth <= catchBlockEndLine) {
+            inCatchBlock = false;
+          }
+        }
+      }
+      if (line.includes('catch (') || line.includes('catch(')) {
         if (line.includes('{')) {
-          return true;
+          inCatchBlock = true;
+          catchBlockEndLine = braceDepth - 1;
         } else {
-          // If the catch is on its own line, the next line with { is the start
           for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
             if (lines[j].includes('{')) {
-              return true;
+              inCatchBlock = true;
+              catchBlockEndLine = braceDepth;
+              break;
             }
           }
         }
       }
-
-      // Check for try blocks
-      if (line.includes('try {') || line.includes('try') && line.includes('{')) {
-        if (catchBlockStartLine > i) {
-          return true; // We found a try block that encompasses the current line
-        }
-      }
-
-      // More sophisticated brace tracking to identify block depth
-      const openBraces = (line.match(/{/g) || []).length;
-      const closeBraces = (line.match(/}/g) || []).length;
-      if (openBraces > closeBraces) {
-        tryBlockDepth++;
-      } else if (closeBraces > openBraces) {
-        tryBlockDepth = Math.max(0, tryBlockDepth - closeBraces + openBraces);
-      }
-
-      // If we're at top level (depth 0) and haven't found a try/catch, we're outside
-      if (tryBlockDepth === 0) {
-        // Check if there was a catch block before we exited
-        if (catchBlockStartLine > i) {
-          return true;
-        }
-      }
     }
-    return false;
+    return inCatchBlock;
   }
 
   /**
@@ -971,6 +951,13 @@ class AISlopDetector {
   }
 
   /**
+   * Get the current configuration
+   */
+  getConfig() {
+    return this.config;
+  }
+
+  /**
    * Get the number of issues found
    */
   getIssueCount() {
@@ -1075,20 +1062,6 @@ class AISlopDetector {
   }
 
   /**
-   * Get issues grouped by type
-   */
-  getIssuesByType() {
-    const byType = {};
-    this.issues.forEach(issue => {
-      if (!byType[issue.type]) {
-        byType[issue.type] = [];
-      }
-      byType[issue.type].push(issue);
-    });
-    return byType;
-  }
-
-  /**
    * Calculate comprehensive KarpeSlop score based on the three axes
    */
   calculateKarpeSlopScore() {
@@ -1181,7 +1154,7 @@ The tool detects the three axes of AI slop:
     process.exit(0);
   }
   const quiet = args.includes('--quiet') || args.includes('-q');
-  const strict = args.includes('--strict') || args.includes('-s');
+  const strict = args.includes('--strict') || args.includes('-s') || !!detector.getConfig().blockOnCritical;
   try {
     const issues = await detector.detect(quiet);
     // Export results to a JSON file for CI/CD integration
