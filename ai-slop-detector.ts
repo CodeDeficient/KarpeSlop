@@ -822,13 +822,7 @@ class AISlopDetector {
             }
           }
 
-          // Skip comment-line-only patterns that only make sense in actual code comments
-          if (pattern.id === 'overconfident_comment') {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
-              continue;
-            }
-          }
+
 
           // In quiet mode, skip test and mock files for all patterns except production console logs
           if (quiet && pattern.id !== 'production_console_log') {
