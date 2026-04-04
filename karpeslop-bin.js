@@ -776,7 +776,7 @@ class AISlopDetector {
   isInTryCatchBlock(lines, lineIndex) {
     let braceDepth = 0;
     let inCatchBlock = false;
-    let catchBlockEndLine = -1;
+    let catchBlockDepth = -1;
     for (let i = 0; i <= lineIndex; i++) {
       const line = lines[i];
       for (let j = 0; j < line.length; j++) {
@@ -784,7 +784,7 @@ class AISlopDetector {
           braceDepth++;
         } else if (line[j] === '}') {
           braceDepth--;
-          if (inCatchBlock && braceDepth < catchBlockEndLine) {
+          if (inCatchBlock && braceDepth < catchBlockDepth) {
             inCatchBlock = false;
           }
         }
@@ -792,12 +792,12 @@ class AISlopDetector {
       if (line.includes('catch (') || line.includes('catch(')) {
         if (line.includes('{')) {
           inCatchBlock = true;
-          catchBlockEndLine = braceDepth - 1;
+          catchBlockDepth = braceDepth - 1;
         } else {
           for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
             if (lines[j].includes('{')) {
               inCatchBlock = true;
-              catchBlockEndLine = braceDepth;
+              catchBlockDepth = braceDepth;
               break;
             }
           }
