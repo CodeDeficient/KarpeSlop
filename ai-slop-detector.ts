@@ -495,7 +495,8 @@ class AISlopDetector {
           '**/lib/**',     // Generated library files
           'scripts/ai-slop-detector.ts',  // Exclude the detector script itself to avoid false positives
           'ai-slop-detector.ts',  // Also exclude when in root directory
-          'improved-ai-slop-detector.ts'  // Exclude the improved detector script to avoid false positives
+          'improved-ai-slop-detector.ts',  // Exclude the improved detector script to avoid false positives
+          ...this.customIgnorePaths
         ]
       });
 
