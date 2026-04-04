@@ -536,10 +536,11 @@ class AISlopDetector {
     // Look backwards to find the start of the function
     for (let i = fetchLineIndex; i >= Math.max(0, fetchLineIndex - 20); i--) {
       const line = lines[i];
+      const isReactHook = line.includes('const') && (line.includes('useState') || line.includes('useEffect') || line.includes('useCallback') || line.includes('useMemo'));
       if (line.includes('async function') ||
         line.includes('function') ||
         line.includes('=>') ||
-        (line.includes('const') && (line.includes('useState') || line.includes('useEffect') || line.includes('useCallback') || line.includes('useMemo'))) ||
+        isReactHook ||
         line.includes('export default function')) {
         // Check if this looks like the start of our function
         if (line.includes('{') || line.includes('=>')) {
