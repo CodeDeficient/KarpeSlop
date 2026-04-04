@@ -224,6 +224,7 @@ class AISlopDetector {
   }];
   config = {};
   customIgnorePaths = [];
+  npmPackageCache = new Map();
   constructor(rootDir) {
     this.rootDir = rootDir;
     this.loadConfig();
@@ -365,7 +366,7 @@ class AISlopDetector {
 
     // 2. Analyze each file for AI Slop patterns
     for (const file of filesToAnalyze) {
-      this.analyzeFile(file, quiet);
+      await this.analyzeFile(file, quiet);
     }
 
     // 3. Report findings
@@ -516,7 +517,7 @@ class AISlopDetector {
   /**
    * Analyze a single file for AI Slop patterns
    */
-  analyzeFile(filePath, quiet = false) {
+  async analyzeFile(filePath, quiet = false) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
 
@@ -713,6 +714,11 @@ class AISlopDetector {
       // Now handle complex nested conditionals separately with improved logic
       this.analyzeComplexNestedConditionals(filePath, lines, i, lineNumber, line);
     }
+
+    // Special handling for package.json and package-lock.json to detect fresh package versions
+    if (filePath.endsWith('package.json') || filePath.endsWith('package-lock.json')) {
+      this.analyzePackageVersions(filePath, content);
+    }
   }
 
   /**
@@ -845,6 +851,98 @@ class AISlopDetector {
       }
     }
     return inCatchBlock;
+  }
+
+  /**
+   * Analyze package.json or package-lock.json for fresh (unstable) package versions
+   * Flags packages updated less than minPackageAgeDays ago (default 7)
+   */
+  async analyzePackageVersions(filePath, content) {
+    const minAgeDays = this.config.minPackageAgeDays ?? 7;
+    const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    let packageData = {};
+    try {
+      const pkg = JSON.parse(content);
+      if (filePath.endsWith('package-lock.json')) {
+        if (pkg.packages) {
+          for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
+            if (pkgPath === '' || pkgPath === 'node_modules/') continue;
+            const name = pkgInfo.name;
+            const version = pkgInfo.version;
+            if (name && version) {
+              packageData[name] = version;
+            }
+          }
+        }
+      } else if (pkg.dependencies) {
+        packageData = {
+          ...pkg.dependencies
+        };
+      }
+    } catch {
+      return;
+    }
+    for (const [pkgName, version] of Object.entries(packageData)) {
+      if (version.startsWith('^') || version.startsWith('~')) {
+        const actualVersion = version.slice(1);
+        const ageInfo = await this.getNpmPackageAge(pkgName, actualVersion);
+        if (ageInfo && ageInfo.ageMs !== null && ageInfo.ageMs < minAgeMs) {
+          const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
+          this.issues.push({
+            type: 'fresh_package_version',
+            file: filePath,
+            line: 1,
+            column: 1,
+            code: `"${pkgName}": "${version}"`,
+            message: `Package '${pkgName}' v${actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+            severity: 'medium'
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Get npm package version age info with caching
+   */
+  async getNpmPackageAge(pkgName, version) {
+    const now = Date.now();
+    const cached = this.npmPackageCache.get(pkgName);
+    if (cached) {
+      const found = cached.find(v => v.version === version);
+      if (found) {
+        const publishTime = new Date(found.time).getTime();
+        return {
+          version,
+          time: found.time,
+          ageMs: now - publishTime
+        };
+      }
+    }
+    try {
+      const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const versionTime = data.time?.[version];
+      if (!versionTime) return null;
+      const publishTime = new Date(versionTime).getTime();
+      if (!this.npmPackageCache.has(pkgName)) {
+        this.npmPackageCache.set(pkgName, []);
+      }
+      this.npmPackageCache.get(pkgName).push({
+        time: versionTime,
+        version
+      });
+      return {
+        version,
+        time: versionTime,
+        ageMs: now - publishTime
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**
