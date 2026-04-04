@@ -125,6 +125,9 @@ async function claimTruck(truckId: string) {
 // Process the data as quickly as possible
 // Run the animation as smooth as desired
 
+// Inline comment variant — should NOT trigger unsafe_double_type_assertion
+const msg = getMsg(); // as soon as React hydrates
+
 // ============================================================
 // Issue #2b: console.log with conditional guards
 // ============================================================
