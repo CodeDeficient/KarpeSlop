@@ -270,7 +270,7 @@ class AISlopDetector {
     },
     {
       id: 'missing_error_handling',
-      pattern: /(fetch|axios|http)\s*\(/g,
+      pattern: /\b(fetch|axios|http)\s*\(/g,
       message: "Potential missing error handling for promise. Consider adding try/catch or .catch().",
       severity: 'medium',
       description: 'Detects calls that might need error handling',
@@ -289,7 +289,7 @@ class AISlopDetector {
     },
     {
       id: 'todo_comment',
-      pattern: /(TODO|FIXME|HACK|XXX|BUG)\b/g,
+      pattern: /\b(TODO|FIXME|HACK|XXX|BUG)\b/g,
       message: "Found TODO/FIXME/HACK comment indicating incomplete implementation.",
       severity: 'medium',
       description: 'Detects incomplete implementation markers'
@@ -729,21 +729,36 @@ class AISlopDetector {
 
           // Special handling for missing error handling - look for properly handled fetch calls
           if (pattern.id === 'missing_error_handling') {
+            const fullLine = line.trim();
+            // Skip matches inside comment lines (single-line, JSDoc, block)
+            if (fullLine.startsWith('//') || fullLine.startsWith('*') || fullLine.startsWith('/*')) {
+              continue;
+            }
             // Check if this fetch call is part of a properly handled async function
             const isProperlyHandled = this.isFetchCallProperlyHandled(lines, i, match.index);
             if (isProperlyHandled) {
-              continue; // Skip this fetch call as it's properly handled
+              continue;
             }
           }
 
           // Special handling for unsafe_double_type_assertion - skip legitimate UI library patterns
           if (pattern.id === 'unsafe_double_type_assertion') {
-            // Check the full line context to identify potentially legitimate patterns
             const fullLine = line.trim();
-            // Skip patterns that are actually safe (as unknown as Type) since we changed the regex
-            // but double-check to be extra sure
+            // Skip patterns that are actually safe (as unknown as Type)
             if (fullLine.includes('as unknown as')) {
-              continue; // This is actually safe - skip it
+              continue;
+            }
+            // Skip matches inside comment lines (e.g., "as soon as React")
+            if (fullLine.startsWith('//') || fullLine.startsWith('*') || fullLine.startsWith('/*')) {
+              continue;
+            }
+            // Skip matches where the preceding token is a preposition or common English word
+            // indicating natural language rather than a type assertion
+            const matchStart = match.index ?? 0;
+            const preceding = line.substring(Math.max(0, matchStart - 10), matchStart).trim();
+            const englishIndicators = ['as soon', 'as quick', 'as fast', 'as smooth', 'as long', 'as much', 'as little', 'as well', 'as good', 'as bad', 'as easy', 'as hard', 'as simple', 'as clear'];
+            if (englishIndicators.some(phrase => preceding.toLowerCase().endsWith(phrase))) {
+              continue;
             }
           }
 
@@ -754,6 +769,20 @@ class AISlopDetector {
             // Skip console.error logs inside catch blocks (legitimate error handling)
             if (fullLine.includes('console.error(') && this.isInTryCatchBlock(lines, i)) {
               continue;
+            }
+
+            // Skip console calls guarded by a conditional on the same line
+            // e.g., if (isDev) console.log('debug');
+            if (/^if\s*\(/.test(fullLine)) {
+              continue;
+            }
+
+            // Skip console calls inside a conditional block opened on a prior line
+            if (i > 0) {
+              const prevLine = lines[i - 1].trim();
+              if (/^if\s*\(/.test(prevLine) && (prevLine.includes('{') || fullLine.startsWith('{') === false)) {
+                continue;
+              }
             }
 
             // Skip general debugging logs that might be intentional in development
