@@ -624,12 +624,12 @@ class AISlopDetector {
             if (fullLine.startsWith('//') || fullLine.startsWith('*') || fullLine.startsWith('/*')) {
               continue;
             }
-            // Skip matches where the preceding token is a preposition or common English word
+            // Skip matches where the first word after "as" is a common English word
             // indicating natural language rather than a type assertion
-            const matchStart = match.index ?? 0;
-            const preceding = line.substring(Math.max(0, matchStart - 10), matchStart).trim();
-            const englishIndicators = ['as soon', 'as quick', 'as fast', 'as smooth', 'as long', 'as much', 'as little', 'as well', 'as good', 'as bad', 'as easy', 'as hard', 'as simple', 'as clear'];
-            if (englishIndicators.some(phrase => preceding.toLowerCase().endsWith(phrase))) {
+            // e.g., "as soon as React hydrates" — "soon" is English, not a type
+            const firstWord = match[0].match(/^as\s+(\w+)/i)?.[1]?.toLowerCase();
+            const englishWords = ['soon', 'quick', 'quickly', 'fast', 'smooth', 'long', 'much', 'little', 'well', 'good', 'bad', 'easy', 'hard', 'simple', 'clear', 'many', 'few', 'close', 'far', 'near'];
+            if (firstWord && englishWords.includes(firstWord)) {
               continue;
             }
           }
