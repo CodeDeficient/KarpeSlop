@@ -68,6 +68,7 @@ interface KarpeSlopConfig {
   ignorePaths?: string[];
   severityOverrides?: Record<string, 'critical' | 'high' | 'medium' | 'low'>;
   blockOnCritical?: boolean;
+  minPackageAgeDays?: number;
 }
 
 class AISlopDetector {
@@ -306,6 +307,7 @@ class AISlopDetector {
 
   private config: KarpeSlopConfig = {};
   private customIgnorePaths: string[] = [];
+  private npmPackageCache: Map<string, { time: string; version: string }[]> = new Map();
 
   constructor(private rootDir: string) {
     this.loadConfig();
@@ -458,7 +460,7 @@ class AISlopDetector {
 
     // 2. Analyze each file for AI Slop patterns
     for (const file of filesToAnalyze) {
-      this.analyzeFile(file, quiet);
+      await this.analyzeFile(file, quiet);
     }
 
     // 3. Report findings
@@ -629,7 +631,7 @@ class AISlopDetector {
   /**
    * Analyze a single file for AI Slop patterns
    */
-  private analyzeFile(filePath: string, quiet: boolean = false) {
+  private async analyzeFile(filePath: string, quiet: boolean = false) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
 
@@ -853,6 +855,11 @@ class AISlopDetector {
       this.analyzeComplexNestedConditionals(filePath, lines, i, lineNumber, line);
 
     }
+
+    // Special handling for package.json and package-lock.json to detect fresh package versions
+    if (filePath.endsWith('package.json') || filePath.endsWith('package-lock.json')) {
+      this.analyzePackageVersions(filePath, content);
+    }
   }
 
   /**
@@ -994,6 +1001,95 @@ class AISlopDetector {
     }
 
     return inCatchBlock;
+  }
+
+  /**
+   * Analyze package.json or package-lock.json for fresh (unstable) package versions
+   * Flags packages updated less than minPackageAgeDays ago (default 7)
+   */
+  private async analyzePackageVersions(filePath: string, content: string): Promise<void> {
+    const minAgeDays = this.config.minPackageAgeDays ?? 7;
+    const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    let packageData: Record<string, string> = {};
+
+    try {
+      const pkg = JSON.parse(content);
+
+      if (filePath.endsWith('package-lock.json')) {
+        if (pkg.packages) {
+          for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
+            if (pkgPath === '' || pkgPath === 'node_modules/') continue;
+            const name = (pkgInfo as Record<string, unknown>).name as string;
+            const version = (pkgInfo as Record<string, unknown>).version as string;
+            if (name && version) {
+              packageData[name] = version;
+            }
+          }
+        }
+      } else if (pkg.dependencies) {
+        packageData = { ...pkg.dependencies };
+      }
+    } catch {
+      return;
+    }
+
+    for (const [pkgName, version] of Object.entries(packageData)) {
+      if (version.startsWith('^') || version.startsWith('~')) {
+        const actualVersion = version.slice(1);
+        const ageInfo = await this.getNpmPackageAge(pkgName, actualVersion);
+        if (ageInfo && ageInfo.ageMs !== null && ageInfo.ageMs < minAgeMs) {
+          const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
+          this.issues.push({
+            type: 'fresh_package_version',
+            file: filePath,
+            line: 1,
+            column: 1,
+            code: `"${pkgName}": "${version}"`,
+            message: `Package '${pkgName}' v${actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+            severity: 'medium'
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Get npm package version age info with caching
+   */
+  private async getNpmPackageAge(pkgName: string, version: string): Promise<{ version: string; time: string; ageMs: number } | null> {
+    const now = Date.now();
+
+    const cached = this.npmPackageCache.get(pkgName);
+    if (cached) {
+      const found = cached.find(v => v.version === version);
+      if (found) {
+        const publishTime = new Date(found.time).getTime();
+        return { version, time: found.time, ageMs: now - publishTime };
+      }
+    }
+
+    try {
+      const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+
+      const data = (await response.json()) as { time: Record<string, string> };
+      const versionTime = data.time?.[version];
+      if (!versionTime) return null;
+
+      const publishTime = new Date(versionTime).getTime();
+
+      if (!this.npmPackageCache.has(pkgName)) {
+        this.npmPackageCache.set(pkgName, []);
+      }
+      this.npmPackageCache.get(pkgName)!.push({ time: versionTime, version });
+
+      return { version, time: versionTime, ageMs: now - publishTime };
+    } catch {
+      return null;
+    }
   }
 
   /**
