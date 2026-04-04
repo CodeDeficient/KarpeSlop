@@ -651,7 +651,7 @@ class AISlopDetector {
             // Skip console calls inside a conditional block opened on a prior line
             if (i > 0) {
               const prevLine = lines[i - 1].trim();
-              if (/^if\s*\(/.test(prevLine) && (prevLine.includes('{') || fullLine.startsWith('{') === false)) {
+              if (/^if\s*\(/.test(prevLine) && !prevLine.includes('function') && (prevLine.includes('{') || fullLine.startsWith('{') === false)) {
                 continue;
               }
             }
@@ -775,7 +775,7 @@ class AISlopDetector {
           braceDepth++;
         } else if (line[j] === '}') {
           braceDepth--;
-          if (inCatchBlock && braceDepth <= catchBlockEndLine) {
+          if (inCatchBlock && braceDepth < catchBlockEndLine) {
             inCatchBlock = false;
           }
         }
