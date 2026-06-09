@@ -1222,6 +1222,10 @@ class AISlopDetector {
         if (pkg.packages) {
           for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
+            // Workspace entries like `packages/ui` are local packages, not
+            // registry-installed dependencies, so they should not be checked
+            // for package freshness.
+            if (!pkgPath.includes('node_modules/')) continue;
             const info = pkgInfo as Record<string, unknown>;
             const version = info.version as string;
             const pkgName = typeof info.name === 'string' && info.name
@@ -1507,9 +1511,11 @@ class AISlopDetector {
     console.log(`Style / Taste (Soul)        : ${score.style} pts`);
     console.log(`TOTAL KARPE-SLOP SCORE      : ${score.total} pts`);
 
-    if (score.total === 0) {
+    if (this.issues.length === 0) {
       console.log(`\nCLEAN. Even Andrej would approve.`);
       console.log(`   "This codebase has taste." — @karpathy, probably`);
+    } else if (this.issues.every(issue => issue.type === 'fresh_package_version')) {
+      console.log(`\nPackage freshness warnings only. Not counted in the KarpeSlop score.`);
     } else if (score.total > 50) {
       console.log(`\nSUEEEY! Here piggy piggy... this codebase is 100% slop-fed.`);
     } else {
