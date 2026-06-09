@@ -308,9 +308,15 @@ class AISlopDetector {
   private config: KarpeSlopConfig = {};
   private customIgnorePaths: string[] = [];
   private npmPackageCache: Map<string, { time: string; version: string }[]> = new Map();
+  private targetPaths: string[] = [];
 
-  constructor(private rootDir: string) {
+  constructor(private rootDir: string, targetPaths?: string[]) {
     this.loadConfig();
+    if (targetPaths && targetPaths.length > 0) {
+      this.targetPaths = targetPaths.map(p =>
+        path.isAbsolute(p) ? p : path.resolve(this.rootDir, p)
+      );
+    }
   }
 
   /**
@@ -445,18 +451,23 @@ class AISlopDetector {
   async detect(quiet: boolean = false) {
     console.log('🔍 Starting AI Slop detection...\n');
 
-    // 1. Find all TypeScript/JavaScript files
-    const allFiles = this.findAllFiles();
+    let filesToAnalyze: string[];
 
-    // Filter files based on quiet mode (skip non-core files if quiet is true)
-    const filesToAnalyze = quiet
-      ? allFiles.filter(file => {
-        const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-        return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
-      })
-      : allFiles;
+    if (this.targetPaths.length > 0) {
+      filesToAnalyze = this.resolveTargetPaths();
+      console.log(`🎯 Targeting ${filesToAnalyze.length} file(s) (explicit paths)\n`);
+    } else {
+      const allFiles = this.findAllFiles();
 
-    console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
+      filesToAnalyze = quiet
+        ? allFiles.filter(file => {
+          const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
+          return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
+        })
+        : allFiles;
+
+      console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
+    }
 
     // 2. Analyze each file for AI Slop patterns
     for (const file of filesToAnalyze) {
@@ -522,6 +533,53 @@ class AISlopDetector {
 
     // Remove duplicates and return
     return [...new Set(allFiles)];
+  }
+
+  /**
+   * Resolve target paths (files and directories) passed via CLI
+   * Expands directories into their scannable files, validates files exist and have correct extensions
+   */
+  private resolveTargetPaths(): string[] {
+    const resolved: string[] = [];
+
+    for (const targetPath of this.targetPaths) {
+      if (!fs.existsSync(targetPath)) {
+        console.warn(`⚠️  Target path does not exist, skipping: ${targetPath}`);
+        continue;
+      }
+
+      const stat = fs.statSync(targetPath);
+
+      if (stat.isFile()) {
+        const ext = path.extname(targetPath);
+        if (this.targetExtensions.includes(ext)) {
+          resolved.push(targetPath);
+        } else {
+          console.warn(`⚠️  Target file has unsupported extension (${ext}), skipping: ${targetPath}`);
+        }
+      } else if (stat.isDirectory()) {
+        for (const ext of this.targetExtensions) {
+          const pattern = path.join(targetPath, `**/*${ext}`).replace(/\\/g, '/');
+          const files = glob.sync(pattern, {
+            ignore: [
+              'node_modules/**',
+              '.next/**',
+              'dist/**',
+              'build/**',
+              'coverage/**',
+              'generated/**',
+              '.vercel/**',
+              '.git/**',
+              '**/*.d.ts',
+              ...this.customIgnorePaths
+            ]
+          });
+          resolved.push(...files);
+        }
+      }
+    }
+
+    return [...new Set(resolved)];
   }
 
   /**
@@ -1432,15 +1490,23 @@ class AISlopDetector {
 // Run the detector if this script is executed directly
 async function runIfMain() {
   const rootDir = process.cwd();
-  const detector = new AISlopDetector(rootDir);
 
   // Parse command line arguments
   const args = process.argv.slice(2);
 
+  // Separate flags from positional path arguments
+  const flagArgs = args.filter(a => a.startsWith('-'));
+  const targetPaths = args.filter(a => !a.startsWith('-'));
+
+  const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
+
   // Check for help options first
-  if (args.includes('--help') || args.includes('-h') || args.includes('/?')) {
+  if (flagArgs.includes('--help') || flagArgs.includes('-h') || flagArgs.includes('/?')) {
     console.log(`
-Usage: karpeslop [options]
+Usage: karpeslop [options] [path...]
+
+Arguments:
+  path...         File or directory path(s) to scan (scans all files if omitted)
 
 Options:
   --help, -h     Show this help message
@@ -1454,10 +1520,13 @@ Exit Codes:
   2 - Critical issues found (--strict mode only)
 
 Examples:
-  karpeslop                    # Scan all files in current directory
-  karpeslop --quiet            # Scan only core application files
-  karpeslop --strict           # Block on critical issues (hallucinations)
-  karpeslop --help             # Show this help
+  karpeslop                          # Scan all files in current directory
+  karpeslop src/app.ts               # Scan a single file
+  karpeslop src/lib/                 # Scan a directory
+  karpeslop src/app.ts src/lib/      # Scan specific paths
+  karpeslop --quiet                  # Scan only core application files
+  karpeslop --strict src/app.ts      # Block on critical issues in a specific file
+  karpeslop --help                   # Show this help
 
 The tool detects the three axes of AI slop:
   1. Information Utility (Noise) - Comments, boilerplate, etc.
@@ -1468,7 +1537,7 @@ The tool detects the three axes of AI slop:
   }
 
   // Check for version options
-  if (args.includes('--version') || args.includes('-v')) {
+  if (flagArgs.includes('--version') || flagArgs.includes('-v')) {
     // Try to get version from package.json
     try {
       const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
@@ -1480,8 +1549,8 @@ The tool detects the three axes of AI slop:
     process.exit(0);
   }
 
-    const quiet = args.includes('--quiet') || args.includes('-q');
-    const strict = args.includes('--strict') || args.includes('-s') || !!detector.getConfig().blockOnCritical;
+    const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
+    const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || !!detector.getConfig().blockOnCritical;
 
   try {
     const issues = await detector.detect(quiet);
@@ -1492,7 +1561,12 @@ The tool detects the three axes of AI slop:
     // In strict mode, exit with code 2 if there are any critical issues (hallucinations)
     const criticalIssues = issues.filter(i => i.severity === 'critical');
     if (strict && criticalIssues.length > 0) {
-      console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found. Blocking.`);
+      if (targetPaths.length > 0) {
+        const criticalFiles = [...new Set(criticalIssues.map(i => path.relative(rootDir, i.file)))];
+        console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found in: ${criticalFiles.join(', ')}`);
+      } else {
+        console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found. Blocking.`);
+      }
       process.exit(2);
     }
 
