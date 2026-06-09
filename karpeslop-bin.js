@@ -982,6 +982,30 @@ class AISlopDetector {
     const minAgeDays = this.config.minPackageAgeDays ?? 7;
     const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
     const packageEntries = [];
+    const collectLegacyLockfileEntries = (dependencies, trail = []) => {
+      if (typeof dependencies !== 'object' || dependencies === null) {
+        return;
+      }
+      for (const [depName, depInfo] of Object.entries(dependencies)) {
+        if (typeof depInfo !== 'object' || depInfo === null) {
+          continue;
+        }
+        const info = depInfo;
+        const version = typeof info.version === 'string' ? info.version : '';
+        const pkgName = typeof info.name === 'string' && info.name ? info.name : depName;
+        const sourceId = ['dependencies', ...trail, depName].join('/');
+        if (pkgName && version) {
+          packageEntries.push({
+            sourceId,
+            pkgName,
+            version
+          });
+        }
+        if (info.dependencies && typeof info.dependencies === 'object') {
+          collectLegacyLockfileEntries(info.dependencies, [...trail, depName]);
+        }
+      }
+    };
     try {
       const pkg = JSON.parse(content);
       if (filePath.endsWith('package-lock.json')) {
@@ -1001,6 +1025,8 @@ class AISlopDetector {
               });
             }
           }
+        } else if (pkg.dependencies) {
+          collectLegacyLockfileEntries(pkg.dependencies);
         }
       } else if (typeof pkg === 'object' && pkg !== null) {
         const p = pkg;
@@ -1425,6 +1451,10 @@ class AISlopDetector {
       quality = 0,
       style = 0;
     for (const i of this.issues) {
+      // Package freshness is tracked separately from AI slop scoring.
+      if (i.type === 'fresh_package_version') {
+        continue;
+      }
       const w = weights[i.type] || 3;
       if (i.type.includes('hallucinated') || i.type.includes('todo') || i.type.includes('assumption')) quality += w;else if (i.type.includes('comment') || i.type.includes('redundant') || i.type.includes('boilerplate')) utility += w;else style += w;
     }
