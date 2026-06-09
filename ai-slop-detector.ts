@@ -551,8 +551,28 @@ class AISlopDetector {
     ];
   }
 
-  private isExcludedPath(filePath: string): boolean {
+  private isIgnoredByConfig(filePath: string): boolean {
     const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
+    if (relativePath.startsWith('..')) {
+      return false;
+    }
+
+    return glob.sync(relativePath, {
+      cwd: this.rootDir,
+      ignore: this.getGlobIgnorePatterns()
+    }).length === 0;
+  }
+
+  private isExcludedPath(filePath: string, allowOutsideRoot: boolean = false): boolean {
+    const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
+    const isOutsideRoot = relativePath.startsWith('..');
+
+    if (allowOutsideRoot && isOutsideRoot) {
+      return relativePath.endsWith('.d.ts') ||
+        relativePath.endsWith('ai-slop-detector.ts') ||
+        relativePath.endsWith('improved-ai-slop-detector.ts');
+    }
+
     // Use segment-based matching so e.g. `src/dist/foo.ts` isn't treated as
     // a build artifact. A real `dist/` directory under `src/` is rare and
     // matching it the way users expect is the lesser evil here.
@@ -622,7 +642,9 @@ class AISlopDetector {
         const ext = path.extname(targetPath);
         const base = path.basename(targetPath);
         const isManifest = ext === '.json' && this.manifestFilenames.includes(base);
-        if (this.isExcludedPath(targetPath)) {
+        if (this.isIgnoredByConfig(targetPath)) {
+          console.warn(`⚠️  Target file matches ignore paths, skipping: ${targetPath}`);
+        } else if (this.isExcludedPath(targetPath, true)) {
           console.warn(`⚠️  Target file is in an excluded path, skipping: ${targetPath}`);
         } else if (this.targetExtensions.includes(ext) || isManifest) {
           resolved.push(targetPath);
@@ -633,7 +655,7 @@ class AISlopDetector {
         for (const ext of this.targetExtensions) {
           const pattern = path.join(targetPath, `**/*${ext}`).replace(/\\/g, '/');
           const files = glob.sync(pattern, { ignore: this.getGlobIgnorePatterns() });
-          const filteredFiles = files.filter(file => !this.isExcludedPath(file));
+          const filteredFiles = files.filter(file => !this.isExcludedPath(file, true));
           resolved.push(...filteredFiles);
         }
         for (const manifestName of this.manifestFilenames) {
@@ -644,7 +666,7 @@ class AISlopDetector {
           const manifestFiles = [
             ...(fs.existsSync(rootManifestPath) ? [rootManifestPath] : []),
             ...glob.sync(nestedPattern, { ignore: this.getGlobIgnorePatterns() })
-          ].filter(file => !this.isExcludedPath(file));
+          ].filter(file => !this.isExcludedPath(file, true));
           resolved.push(...manifestFiles);
         }
       }
