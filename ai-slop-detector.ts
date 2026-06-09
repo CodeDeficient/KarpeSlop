@@ -520,7 +520,7 @@ class AISlopDetector {
       relativePath.split('/').some(segment => segment.startsWith('.')) ||
       relativePath.includes('/types/') ||
       relativePath.startsWith('types/') ||
-      relativePath.includes('types/') ||
+      relativePath.split('/').includes('types') ||
       relativePath.endsWith('.d.ts') ||
       relativePath.endsWith('ai-slop-detector.ts') ||
       relativePath.endsWith('improved-ai-slop-detector.ts');
