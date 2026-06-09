@@ -268,6 +268,7 @@ class AISlopDetector {
   customIgnorePaths = [];
   npmPackageCache = new Map();
   registryWarningLogged = false;
+  registryUnavailable = false;
   reportedFreshPackageKeys = new Set();
   targetPaths = [];
   constructor(rootDir, targetPaths) {
@@ -452,16 +453,14 @@ class AISlopDetector {
   isExcludedPath(filePath, allowOutsideRoot = false) {
     const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
     const isOutsideRoot = relativePath.startsWith('..');
-    if (allowOutsideRoot && isOutsideRoot) {
-      return relativePath.endsWith('.d.ts') || relativePath.endsWith('ai-slop-detector.ts') || relativePath.endsWith('improved-ai-slop-detector.ts');
-    }
+    const pathToMatch = allowOutsideRoot && isOutsideRoot ? path.resolve(filePath).replace(/\\/g, '/') : relativePath;
 
     // Use segment-based matching so e.g. `src/dist/foo.ts` isn't treated as
     // a build artifact. A real `dist/` directory under `src/` is rare and
     // matching it the way users expect is the lesser evil here.
-    const segments = relativePath.split('/');
+    const segments = pathToMatch.split('/');
     const excludedSegment = name => segments.includes(name);
-    return excludedSegment('generated') || excludedSegment('coverage') || excludedSegment('.next') || excludedSegment('node_modules') || excludedSegment('dist') || excludedSegment('build') || excludedSegment('.git') || excludedSegment('out') || excludedSegment('temp') || excludedSegment('types') || segments.some(segment => segment.startsWith('.')) || relativePath.endsWith('.d.ts') || relativePath.endsWith('ai-slop-detector.ts') || relativePath.endsWith('improved-ai-slop-detector.ts');
+    return excludedSegment('generated') || excludedSegment('coverage') || excludedSegment('.next') || excludedSegment('node_modules') || excludedSegment('dist') || excludedSegment('build') || excludedSegment('.git') || excludedSegment('out') || excludedSegment('temp') || excludedSegment('types') || segments.some(segment => segment.startsWith('.')) || pathToMatch.endsWith('.d.ts') || !isOutsideRoot && (pathToMatch.endsWith('ai-slop-detector.ts') || pathToMatch.endsWith('improved-ai-slop-detector.ts'));
   }
 
   /**
@@ -1012,8 +1011,6 @@ class AISlopDetector {
         if (pkg.packages) {
           for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
-            // Skip nested node_modules entries to avoid transitive double-counting
-            if (pkgPath.split('node_modules/').length > 2) continue;
             const info = pkgInfo;
             const version = info.version;
             const pkgName = typeof info.name === 'string' && info.name ? info.name : pkgPath.split('node_modules/').pop() || pkgPath;
@@ -1081,7 +1078,7 @@ class AISlopDetector {
       ageInfo
     } of ageInfos) {
       if (ageInfo && ageInfo.ageMs < minAgeMs) {
-        const issueKey = `${filePath}|${sourceId}|${pkgName}|${version}`;
+        const issueKey = `${filePath}|${pkgName}|${version}`;
         if (this.reportedFreshPackageKeys.has(issueKey)) {
           continue;
         }
@@ -1122,6 +1119,9 @@ class AISlopDetector {
         ageMs: now - publishTime
       };
     }
+    if (this.registryUnavailable) {
+      return null;
+    }
     let data = null;
     try {
       const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
@@ -1142,6 +1142,7 @@ class AISlopDetector {
         console.warn('⚠️  Could not reach npm registry to check package ages. fresh_package_version checks will be skipped.');
         this.registryWarningLogged = true;
       }
+      this.registryUnavailable = true;
       return null;
     }
     if (data?.time) {
