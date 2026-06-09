@@ -268,6 +268,7 @@ class AISlopDetector {
   customIgnorePaths = [];
   npmPackageCache = new Map();
   registryWarningLogged = false;
+  reportedFreshPackageKeys = new Set();
   targetPaths = [];
   constructor(rootDir, targetPaths) {
     this.rootDir = rootDir;
@@ -459,12 +460,15 @@ class AISlopDetector {
       allFiles.push(...filteredFiles);
     }
 
-    // Also pick up manifest files at the project root for package-age analysis
+    // Also pick up manifest files at the project root and below it for
+    // package-age analysis in monorepos/workspaces.
     for (const name of this.manifestFilenames) {
-      const manifestPath = path.join(this.rootDir, name);
-      if (fs.existsSync(manifestPath) && !this.isExcludedPath(manifestPath)) {
-        allFiles.push(manifestPath);
-      }
+      const rootManifestPath = path.join(this.rootDir, name);
+      const nestedPattern = path.join(this.rootDir, '**', name).replace(/\\/g, '/');
+      const manifestFiles = [...(fs.existsSync(rootManifestPath) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
+        ignore: this.getGlobIgnorePatterns()
+      })].filter(file => !this.isExcludedPath(file));
+      allFiles.push(...manifestFiles);
     }
 
     // Remove duplicates and return
@@ -503,14 +507,15 @@ class AISlopDetector {
           const filteredFiles = files.filter(file => !this.isExcludedPath(file));
           resolved.push(...filteredFiles);
         }
-        // Also pick up manifest files so fresh_package_version rule still fires
-        // when user targets a directory (e.g. `karpeslop src/lib/` with a
-        // package.json inside that directory)
         for (const manifestName of this.manifestFilenames) {
-          const manifestPath = path.join(targetPath, manifestName);
-          if (fs.existsSync(manifestPath) && !this.isExcludedPath(manifestPath)) {
-            resolved.push(manifestPath);
-          }
+          // Pick up manifests both at the directory root and below it so the
+          // fresh_package_version rule still fires in monorepos/workspaces.
+          const rootManifestPath = path.join(targetPath, manifestName);
+          const nestedPattern = path.join(targetPath, '**', manifestName).replace(/\\/g, '/');
+          const manifestFiles = [...(fs.existsSync(rootManifestPath) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
+            ignore: this.getGlobIgnorePatterns()
+          })].filter(file => !this.isExcludedPath(file));
+          resolved.push(...manifestFiles);
         }
       }
     }
@@ -1013,6 +1018,11 @@ class AISlopDetector {
       ageInfo
     } of ageInfos) {
       if (ageInfo && ageInfo.ageMs < minAgeMs) {
+        const issueKey = `${pkgName}|${version}`;
+        if (this.reportedFreshPackageKeys.has(issueKey)) {
+          continue;
+        }
+        this.reportedFreshPackageKeys.add(issueKey);
         const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
         this.issues.push({
           type: 'fresh_package_version',
