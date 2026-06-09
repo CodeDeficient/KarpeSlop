@@ -1140,7 +1140,7 @@ class AISlopDetector {
     const minAgeDays = this.config.minPackageAgeDays ?? 7;
     const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
 
-    let packageData: Record<string, string> = {};
+    const packageEntries: Array<{ sourceId: string; pkgName: string; version: string }> = [];
 
     try {
       const pkg = JSON.parse(content);
@@ -1151,12 +1151,13 @@ class AISlopDetector {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
             // Skip nested node_modules entries to avoid transitive double-counting
             if (pkgPath.split('node_modules/').length > 2) continue;
-            const version = (pkgInfo as Record<string, unknown>).version as string;
-            // pkgPath looks like "node_modules/foo" or "node_modules/@scope/bar"
-            // The last segment is always the package name for non-root entries
-            const name = pkgPath.split('node_modules/').pop()!;
-            if (name && version) {
-              packageData[name] = version;
+            const info = pkgInfo as Record<string, unknown>;
+            const version = info.version as string;
+            const pkgName = typeof info.name === 'string' && info.name
+              ? info.name
+              : pkgPath.split('node_modules/').pop() || pkgPath;
+            if (pkgName && version) {
+              packageEntries.push({ sourceId: pkgPath, pkgName, version });
             }
           }
         }
@@ -1164,7 +1165,9 @@ class AISlopDetector {
         const p = pkg as Record<string, Record<string, string> | undefined>;
         for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
           if (p[key]) {
-            Object.assign(packageData, p[key]);
+            for (const [pkgName, version] of Object.entries(p[key]!)) {
+              packageEntries.push({ sourceId: key, pkgName, version });
+            }
           }
         }
       }
@@ -1172,8 +1175,8 @@ class AISlopDetector {
       return;
     }
 
-    const entries = Object.entries(packageData)
-      .map(([pkgName, version]) => ({ pkgName, ...parseVersionRange(version) }))
+    const entries = packageEntries
+      .map(({ sourceId, pkgName, version }) => ({ sourceId, pkgName, ...parseVersionRange(version) }))
       // Keep the rule narrow on purpose: only caret/tilde ranges are treated
       // as "fresh package" candidates in package.json. package-lock.json is
       // always checked because it contains the resolved version.
@@ -1183,16 +1186,16 @@ class AISlopDetector {
     // ~600 req/min, and a typical package-lock.json has 200-1000 deps.
     const NPM_CONCURRENCY = 5;
     const ageInfos = await pLimit(
-      entries.map(({ pkgName, actualVersion }) => () =>
+      entries.map(({ sourceId, pkgName, actualVersion }) => () =>
         this.getNpmPackageAge(pkgName, actualVersion)
-          .then(ageInfo => ({ pkgName, version: actualVersion, ageInfo }))
+          .then(ageInfo => ({ sourceId, pkgName, version: actualVersion, ageInfo }))
       ),
       NPM_CONCURRENCY
     );
 
-    for (const { pkgName, version, ageInfo } of ageInfos) {
+    for (const { sourceId, pkgName, version, ageInfo } of ageInfos) {
       if (ageInfo && ageInfo.ageMs < minAgeMs) {
-        const issueKey = `${filePath}|${pkgName}|${version}`;
+        const issueKey = `${filePath}|${sourceId}|${pkgName}|${version}`;
         if (this.reportedFreshPackageKeys.has(issueKey)) {
           continue;
         }
@@ -1203,8 +1206,12 @@ class AISlopDetector {
           file: filePath,
           line: 1,
           column: 1,
-          code: `"${pkgName}": "${version}"`,
-          message: `Package '${pkgName}' v${version} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+          code: filePath.endsWith('package-lock.json')
+            ? `${sourceId}: ${pkgName}@${version}`
+            : `"${pkgName}": "${version}"`,
+          message: filePath.endsWith('package-lock.json')
+            ? `Package '${pkgName}' from ${sourceId} v${version} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`
+            : `Package '${pkgName}' v${version} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
           severity: 'medium'
         });
       }
