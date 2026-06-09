@@ -1108,8 +1108,9 @@ class AISlopDetector {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
             // Skip nested node_modules entries to avoid transitive double-counting
             if (pkgPath.split('node_modules/').length > 2) continue;
-            const name = (pkgInfo as Record<string, unknown>).name as string;
-            const version = (pkgInfo as Record<string, unknown>).version as string;
+            const info = pkgInfo as Record<string, unknown>;
+            const name = (info.name as string) || pkgPath.split('node_modules/').pop()!;
+            const version = info.version as string;
             if (name && version) {
               packageData[name] = version;
             }
@@ -1165,7 +1166,14 @@ class AISlopDetector {
 
     try {
       const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
-      const response = await fetch(url);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      let response: Response;
+      try {
+        response = await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
       if (!response.ok) return null;
 
       const data = (await response.json()) as { time: Record<string, string> };
