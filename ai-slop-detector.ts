@@ -91,11 +91,12 @@ function parseVersionRange(version: string): { actualVersion: string; isRange: b
  * outbound HTTP calls to the npm registry (which rate-limits unauthenticated
  * callers at ~600 req/min).
  */
-async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
+async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number, shouldStop?: () => boolean): Promise<T[]> {
   const results: T[] = new Array(tasks.length);
   let next = 0;
   const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
     while (true) {
+      if (shouldStop?.()) return;
       const i = next++;
       if (i >= tasks.length) return;
       results[i] = await tasks[i]();
@@ -500,21 +501,19 @@ class AISlopDetector {
     let filesToAnalyze: string[];
 
     if (this.targetPaths.length > 0) {
-      filesToAnalyze = this.resolveTargetPaths();
-      console.log(`🎯 Targeting ${filesToAnalyze.length} file(s) (explicit paths)\n`);
-      if (filesToAnalyze.length === 0) {
+      const resolvedTargetFiles = this.resolveTargetPaths();
+      if (resolvedTargetFiles.length === 0) {
         throw new Error('No valid target files found for the supplied paths');
       }
+      filesToAnalyze = quiet
+        ? resolvedTargetFiles.filter(file => this.shouldAnalyzeInQuietMode(file))
+        : resolvedTargetFiles;
+      console.log(`🎯 Targeting ${filesToAnalyze.length} file(s) (explicit paths)\n`);
     } else {
       const allFiles = this.findAllFiles();
 
       filesToAnalyze = quiet
-        ? allFiles.filter(file => {
-          const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-          const base = path.basename(file);
-          if (base === 'package.json' || base === 'package-lock.json') return true;
-          return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
-        })
+        ? allFiles.filter(file => this.shouldAnalyzeInQuietMode(file))
         : allFiles;
 
       console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
@@ -553,6 +552,15 @@ class AISlopDetector {
       'improved-ai-slop-detector.ts',
       ...this.customIgnorePaths
     ];
+  }
+
+  private shouldAnalyzeInQuietMode(filePath: string): boolean {
+    const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
+    const base = path.basename(filePath);
+    if (base === 'package.json' || base === 'package-lock.json') {
+      return true;
+    }
+    return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
   }
 
   private isIgnoredByConfig(filePath: string): boolean {
@@ -1167,7 +1175,20 @@ class AISlopDetector {
     const minAgeDays = this.config.minPackageAgeDays ?? 7;
     const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
 
-    const packageEntries: Array<{ sourceId: string; pkgName: string; version: string }> = [];
+    const packageEntries: Array<{ scopeKey: string; sourceId: string; pkgName: string; version: string }> = [];
+    const lockfileRoot = path.dirname(filePath);
+    const normalizePath = (input: string) => input.replace(/\\/g, '/');
+    const lockfileScopeKey = (pkgPath: string): string => {
+      const normalizedPkgPath = normalizePath(pkgPath);
+      const nodeModulesIndex = normalizedPkgPath.lastIndexOf('/node_modules/');
+      const scopeRelative = nodeModulesIndex !== -1
+        ? normalizedPkgPath.slice(0, nodeModulesIndex)
+        : normalizedPkgPath.startsWith('node_modules/')
+          ? ''
+          : normalizedPkgPath;
+
+      return normalizePath(path.resolve(lockfileRoot, scopeRelative || '.'));
+    };
     const collectLegacyLockfileEntries = (dependencies: unknown, trail: string[] = []): void => {
       if (typeof dependencies !== 'object' || dependencies === null) {
         return;
@@ -1181,10 +1202,11 @@ class AISlopDetector {
         const info = depInfo as Record<string, unknown>;
         const version = typeof info.version === 'string' ? info.version : '';
         const pkgName = typeof info.name === 'string' && info.name ? info.name : depName;
+        const scopeKey = normalizePath(lockfileRoot);
         const sourceId = ['dependencies', ...trail, depName].join('/');
 
         if (pkgName && version) {
-          packageEntries.push({ sourceId, pkgName, version });
+          packageEntries.push({ scopeKey, sourceId, pkgName, version });
         }
 
         if (info.dependencies && typeof info.dependencies === 'object') {
@@ -1206,18 +1228,19 @@ class AISlopDetector {
               ? info.name
               : pkgPath.split('node_modules/').pop() || pkgPath;
             if (pkgName && version) {
-              packageEntries.push({ sourceId: pkgPath, pkgName, version });
+              packageEntries.push({ scopeKey: lockfileScopeKey(pkgPath), sourceId: pkgPath, pkgName, version });
             }
           }
         } else if (pkg.dependencies) {
           collectLegacyLockfileEntries(pkg.dependencies);
         }
       } else if (typeof pkg === 'object' && pkg !== null) {
+        const packageJsonScopeKey = normalizePath(path.dirname(filePath));
         const p = pkg as Record<string, Record<string, string> | undefined>;
         for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
           if (p[key]) {
             for (const [pkgName, version] of Object.entries(p[key]!)) {
-              packageEntries.push({ sourceId: key, pkgName, version });
+              packageEntries.push({ scopeKey: packageJsonScopeKey, sourceId: key, pkgName, version });
             }
           }
         }
@@ -1227,7 +1250,7 @@ class AISlopDetector {
     }
 
     const entries = packageEntries
-      .map(({ sourceId, pkgName, version }) => ({ sourceId, pkgName, ...parseVersionRange(version) }))
+      .map(({ scopeKey, sourceId, pkgName, version }) => ({ scopeKey, sourceId, pkgName, ...parseVersionRange(version) }))
       // Keep the rule narrow on purpose: only caret/tilde ranges are treated
       // as "fresh package" candidates in package.json. package-lock.json is
       // always checked because it contains the resolved version.
@@ -1237,16 +1260,22 @@ class AISlopDetector {
     // ~600 req/min, and a typical package-lock.json has 200-1000 deps.
     const NPM_CONCURRENCY = 5;
     const ageInfos = await pLimit(
-      entries.map(({ sourceId, pkgName, actualVersion }) => () =>
+      entries.map(({ scopeKey, sourceId, pkgName, actualVersion }) => () =>
         this.getNpmPackageAge(pkgName, actualVersion)
-          .then(ageInfo => ({ sourceId, pkgName, version: actualVersion, ageInfo }))
+          .then(ageInfo => ({ scopeKey, sourceId, pkgName, version: actualVersion, ageInfo }))
       ),
-      NPM_CONCURRENCY
+      NPM_CONCURRENCY,
+      () => this.registryUnavailable
     );
 
-    for (const { sourceId, pkgName, version, ageInfo } of ageInfos) {
+    for (const ageInfoResult of ageInfos) {
+      if (!ageInfoResult) {
+        continue;
+      }
+
+      const { scopeKey, sourceId, pkgName, version, ageInfo } = ageInfoResult;
       if (ageInfo && ageInfo.ageMs < minAgeMs) {
-        const issueKey = `${filePath}|${pkgName}|${version}`;
+        const issueKey = `${scopeKey}|${pkgName}|${version}`;
         if (this.reportedFreshPackageKeys.has(issueKey)) {
           continue;
         }
