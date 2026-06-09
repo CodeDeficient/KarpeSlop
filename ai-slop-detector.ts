@@ -480,6 +480,47 @@ class AISlopDetector {
     return this.issues;
   }
 
+  private getGlobIgnorePatterns(): string[] {
+    return [
+      'node_modules/**',
+      '.next/**',
+      'dist/**',
+      'build/**',
+      'coverage/**',
+      'generated/**',
+      '.vercel/**',
+      '.git/**',
+      '**/types/**',
+      '**/node_modules/**',
+      '**/.*',
+      '**/*.d.ts',
+      '**/coverage/**',
+      '**/out/**',
+      '**/temp/**',
+      'scripts/ai-slop-detector.ts',
+      'ai-slop-detector.ts',
+      'improved-ai-slop-detector.ts',
+      ...this.customIgnorePaths
+    ];
+  }
+
+  private isExcludedPath(filePath: string): boolean {
+    const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
+    return !(
+      !relativePath.includes('generated/') &&
+      !relativePath.includes('/generated') &&
+      !relativePath.startsWith('generated/') &&
+      !relativePath.includes('coverage/') &&
+      !relativePath.includes('.next/') &&
+      !relativePath.includes('node_modules/') &&
+      !relativePath.includes('dist/') &&
+      !relativePath.includes('build/') &&
+      !relativePath.includes('.git/') &&
+      !relativePath.includes('out/') &&
+      !relativePath.includes('temp/')
+    );
+  }
+
   /**
    * Find all TypeScript/JavaScript files in the project
    */
@@ -488,46 +529,8 @@ class AISlopDetector {
 
     for (const ext of this.targetExtensions) {
       const pattern = path.join(this.rootDir, `**/*${ext}`).replace(/\\/g, '/');
-      const files = glob.sync(pattern, {
-        ignore: [
-          'node_modules/**',
-          '.next/**',
-          'dist/**',
-          'build/**',
-          'coverage/**',
-          'generated/**',  // Prisma generated files
-          '.vercel/**',    // Vercel build files
-          '.git/**',       // Git files
-          '**/types/**',   // Exclude type definition files
-          '**/node_modules/**',
-          '**/.*',        // Hidden directories like .git (but not .tsx files)
-          '**/*.d.ts',     // Don't scan declaration files
-          '**/coverage/**', // Coverage reports
-          '**/out/**',     // Next.js output directory
-          '**/temp/**',    // Temporary files
-          'scripts/ai-slop-detector.ts',  // Exclude the detector script itself to avoid false positives
-          'ai-slop-detector.ts',  // Also exclude when in root directory
-          'improved-ai-slop-detector.ts',  // Exclude the improved detector script to avoid false positives
-          ...this.customIgnorePaths
-        ]
-      });
-
-      // Additional filtering to remove any generated files that may have slipped through
-      const filteredFiles = files.filter(file => {
-        const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-        return !relativePath.includes('generated/') &&
-          !relativePath.includes('/generated') &&
-          !relativePath.startsWith('generated/') &&
-          !relativePath.includes('coverage/') &&
-          !relativePath.includes('.next/') &&
-          !relativePath.includes('node_modules/') &&
-          !relativePath.includes('dist/') &&
-          !relativePath.includes('build/') &&
-          !relativePath.includes('.git/') &&
-          !relativePath.includes('out/') &&
-          !relativePath.includes('temp/');
-      });
-
+      const files = glob.sync(pattern, { ignore: this.getGlobIgnorePatterns() });
+      const filteredFiles = files.filter(file => !this.isExcludedPath(file));
       allFiles.push(...filteredFiles);
     }
 
@@ -560,21 +563,9 @@ class AISlopDetector {
       } else if (stat.isDirectory()) {
         for (const ext of this.targetExtensions) {
           const pattern = path.join(targetPath, `**/*${ext}`).replace(/\\/g, '/');
-          const files = glob.sync(pattern, {
-            ignore: [
-              'node_modules/**',
-              '.next/**',
-              'dist/**',
-              'build/**',
-              'coverage/**',
-              'generated/**',
-              '.vercel/**',
-              '.git/**',
-              '**/*.d.ts',
-              ...this.customIgnorePaths
-            ]
-          });
-          resolved.push(...files);
+          const files = glob.sync(pattern, { ignore: this.getGlobIgnorePatterns() });
+          const filteredFiles = files.filter(file => !this.isExcludedPath(file));
+          resolved.push(...filteredFiles);
         }
       }
     }
@@ -1492,11 +1483,19 @@ async function runIfMain() {
   const rootDir = process.cwd();
 
   // Parse command line arguments
+  // Support -- separator: everything after -- is treated as a path, even if it starts with -
   const args = process.argv.slice(2);
+  const doubleDashIdx = args.indexOf('--');
+  let flagArgs: string[];
+  let targetPaths: string[];
 
-  // Separate flags from positional path arguments
-  const flagArgs = args.filter(a => a.startsWith('-'));
-  const targetPaths = args.filter(a => !a.startsWith('-'));
+  if (doubleDashIdx !== -1) {
+    flagArgs = args.slice(0, doubleDashIdx);
+    targetPaths = args.slice(doubleDashIdx + 1);
+  } else {
+    flagArgs = args.filter(a => a.startsWith('-'));
+    targetPaths = args.filter(a => !a.startsWith('-'));
+  }
 
   const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
 
@@ -1513,6 +1512,7 @@ Options:
   --quiet, -q    Run in quiet mode (only scan core app files)
   --strict, -s   Exit with code 2 if critical issues (hallucinations) are found
   --version, -v  Show version information
+  --             End of flags; treat remaining args as paths (even if they start with -)
 
 Exit Codes:
   0 - No issues found
@@ -1526,6 +1526,7 @@ Examples:
   karpeslop src/app.ts src/lib/      # Scan specific paths
   karpeslop --quiet                  # Scan only core application files
   karpeslop --strict src/app.ts      # Block on critical issues in a specific file
+  karpeslop -- -dash-file.ts         # Scan a file whose name starts with -
   karpeslop --help                   # Show this help
 
 The tool detects the three axes of AI slop:
