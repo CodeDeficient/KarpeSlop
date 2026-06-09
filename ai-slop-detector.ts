@@ -506,19 +506,22 @@ class AISlopDetector {
 
   private isExcludedPath(filePath: string): boolean {
     const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
-    return !(
-      !relativePath.includes('generated/') &&
-      !relativePath.includes('/generated') &&
-      !relativePath.startsWith('generated/') &&
-      !relativePath.includes('coverage/') &&
-      !relativePath.includes('.next/') &&
-      !relativePath.includes('node_modules/') &&
-      !relativePath.includes('dist/') &&
-      !relativePath.includes('build/') &&
-      !relativePath.includes('.git/') &&
-      !relativePath.includes('out/') &&
-      !relativePath.includes('temp/')
-    );
+    return relativePath.includes('generated/') ||
+      relativePath.includes('/generated') ||
+      relativePath.startsWith('generated/') ||
+      relativePath.includes('coverage/') ||
+      relativePath.includes('.next/') ||
+      relativePath.includes('node_modules/') ||
+      relativePath.includes('dist/') ||
+      relativePath.includes('build/') ||
+      relativePath.includes('.git/') ||
+      relativePath.includes('out/') ||
+      relativePath.includes('temp/') ||
+      relativePath.startsWith('.') ||
+      relativePath.includes('/types/') ||
+      relativePath.endsWith('.d.ts') ||
+      relativePath.endsWith('ai-slop-detector.ts') ||
+      relativePath.endsWith('improved-ai-slop-detector.ts');
   }
 
   /**
