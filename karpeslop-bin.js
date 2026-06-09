@@ -15,9 +15,26 @@ import { fileURLToPath } from 'url';
 
 // Phase 6: Configuration file support
 
+/**
+ * Parse a semver range string (e.g. "^1.2.3", "~1.2.3", "1.2.3") into the
+ * concrete version and whether the original was a range.
+ */
+function parseVersionRange(version) {
+  if (version.startsWith('^') || version.startsWith('~')) {
+    return {
+      actualVersion: version.slice(1),
+      isRange: true
+    };
+  }
+  return {
+    actualVersion: version,
+    isRange: false
+  };
+}
 class AISlopDetector {
   issues = [];
   targetExtensions = ['.ts', '.tsx', '.js', '.jsx'];
+  manifestFilenames = ['package.json', 'package-lock.json'];
 
   // Core application directories to prioritize in reporting
   coreAppDirs = ['app/', 'components/', 'lib/', 'hooks/', 'services/'];
@@ -225,9 +242,13 @@ class AISlopDetector {
   config = {};
   customIgnorePaths = [];
   npmPackageCache = new Map();
-  constructor(rootDir) {
+  targetPaths = [];
+  constructor(rootDir, targetPaths) {
     this.rootDir = rootDir;
     this.loadConfig();
+    if (targetPaths && targetPaths.length > 0) {
+      this.targetPaths = targetPaths.map(p => path.isAbsolute(p) ? p : path.resolve(this.rootDir, p));
+    }
   }
 
   /**
@@ -292,6 +313,14 @@ class AISlopDetector {
         }
       }
     }
+
+    // Validate minPackageAgeDays
+    if (cfg.minPackageAgeDays !== undefined) {
+      const v = cfg.minPackageAgeDays;
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+        throw new Error('minPackageAgeDays must be a finite non-negative number');
+      }
+    }
     return cfg;
   }
 
@@ -353,16 +382,20 @@ class AISlopDetector {
    */
   async detect(quiet = false) {
     console.log('🔍 Starting AI Slop detection...\n');
-
-    // 1. Find all TypeScript/JavaScript files
-    const allFiles = this.findAllFiles();
-
-    // Filter files based on quiet mode (skip non-core files if quiet is true)
-    const filesToAnalyze = quiet ? allFiles.filter(file => {
-      const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-      return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
-    }) : allFiles;
-    console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
+    let filesToAnalyze;
+    if (this.targetPaths.length > 0) {
+      filesToAnalyze = this.resolveTargetPaths();
+      console.log(`🎯 Targeting ${filesToAnalyze.length} file(s) (explicit paths)\n`);
+    } else {
+      const allFiles = this.findAllFiles();
+      filesToAnalyze = quiet ? allFiles.filter(file => {
+        const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
+        const base = path.basename(file);
+        if (base === 'package.json' || base === 'package-lock.json') return true;
+        return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
+      }) : allFiles;
+      console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
+    }
 
     // 2. Analyze each file for AI Slop patterns
     for (const file of filesToAnalyze) {
@@ -373,52 +406,75 @@ class AISlopDetector {
     this.generateReport(quiet);
     return this.issues;
   }
+  getGlobIgnorePatterns() {
+    return ['node_modules/**', '.next/**', 'dist/**', 'build/**', 'coverage/**', 'generated/**', '.vercel/**', '.git/**', '**/types/**', '**/node_modules/**', '**/.*', '**/*.d.ts', '**/coverage/**', '**/out/**', '**/temp/**', 'scripts/ai-slop-detector.ts', 'ai-slop-detector.ts', 'improved-ai-slop-detector.ts', ...this.customIgnorePaths];
+  }
+  isExcludedPath(filePath) {
+    const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
+    return relativePath.includes('generated/') || relativePath.includes('/generated') || relativePath.startsWith('generated/') || relativePath.includes('coverage/') || relativePath.includes('.next/') || relativePath.includes('node_modules/') || relativePath.includes('dist/') || relativePath.includes('build/') || relativePath.includes('.git/') || relativePath.includes('out/') || relativePath.includes('temp/') || relativePath.split('/').some(segment => segment.startsWith('.')) || relativePath.split('/').includes('types') || relativePath.endsWith('.d.ts') || relativePath.endsWith('ai-slop-detector.ts') || relativePath.endsWith('improved-ai-slop-detector.ts');
+  }
 
   /**
-   * Find all TypeScript/JavaScript files in the project
+   * Find all TypeScript/JavaScript files in the project, plus manifest files
    */
   findAllFiles() {
     const allFiles = [];
     for (const ext of this.targetExtensions) {
       const pattern = path.join(this.rootDir, `**/*${ext}`).replace(/\\/g, '/');
       const files = glob.sync(pattern, {
-        ignore: ['node_modules/**', '.next/**', 'dist/**', 'build/**', 'coverage/**', 'generated/**',
-        // Prisma generated files
-        '.vercel/**',
-        // Vercel build files
-        '.git/**',
-        // Git files
-        '**/types/**',
-        // Exclude type definition files
-        '**/node_modules/**', '**/.*',
-        // Hidden directories like .git (but not .tsx files)
-        '**/*.d.ts',
-        // Don't scan declaration files
-        '**/coverage/**',
-        // Coverage reports
-        '**/out/**',
-        // Next.js output directory
-        '**/temp/**',
-        // Temporary files
-        'scripts/ai-slop-detector.ts',
-        // Exclude the detector script itself to avoid false positives
-        'ai-slop-detector.ts',
-        // Also exclude when in root directory
-        'improved-ai-slop-detector.ts',
-        // Exclude the improved detector script to avoid false positives
-        ...this.customIgnorePaths]
+        ignore: this.getGlobIgnorePatterns()
       });
-
-      // Additional filtering to remove any generated files that may have slipped through
-      const filteredFiles = files.filter(file => {
-        const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-        return !relativePath.includes('generated/') && !relativePath.includes('/generated') && !relativePath.startsWith('generated/') && !relativePath.includes('coverage/') && !relativePath.includes('.next/') && !relativePath.includes('node_modules/') && !relativePath.includes('dist/') && !relativePath.includes('build/') && !relativePath.includes('.git/') && !relativePath.includes('out/') && !relativePath.includes('temp/');
-      });
+      const filteredFiles = files.filter(file => !this.isExcludedPath(file));
       allFiles.push(...filteredFiles);
+    }
+
+    // Also pick up manifest files at the project root for package-age analysis
+    for (const name of this.manifestFilenames) {
+      const manifestPath = path.join(this.rootDir, name);
+      if (fs.existsSync(manifestPath) && !this.isExcludedPath(manifestPath)) {
+        allFiles.push(manifestPath);
+      }
     }
 
     // Remove duplicates and return
     return [...new Set(allFiles)];
+  }
+
+  /**
+   * Resolve target paths (files and directories) passed via CLI
+   * Expands directories into their scannable files, validates files exist and have correct extensions
+   */
+  resolveTargetPaths() {
+    const resolved = [];
+    for (const targetPath of this.targetPaths) {
+      if (!fs.existsSync(targetPath)) {
+        console.warn(`⚠️  Target path does not exist, skipping: ${targetPath}`);
+        continue;
+      }
+      const stat = fs.statSync(targetPath);
+      if (stat.isFile()) {
+        const ext = path.extname(targetPath);
+        const base = path.basename(targetPath);
+        const isManifest = ext === '.json' && this.manifestFilenames.includes(base);
+        if (this.isExcludedPath(targetPath)) {
+          console.warn(`⚠️  Target file is in an excluded path, skipping: ${targetPath}`);
+        } else if (this.targetExtensions.includes(ext) || isManifest) {
+          resolved.push(targetPath);
+        } else {
+          console.warn(`⚠️  Target file has unsupported extension (${ext}), skipping: ${targetPath}`);
+        }
+      } else if (stat.isDirectory()) {
+        for (const ext of this.targetExtensions) {
+          const pattern = path.join(targetPath, `**/*${ext}`).replace(/\\/g, '/');
+          const files = glob.sync(pattern, {
+            ignore: this.getGlobIgnorePatterns()
+          });
+          const filteredFiles = files.filter(file => !this.isExcludedPath(file));
+          resolved.push(...filteredFiles);
+        }
+      }
+    }
+    return [...new Set(resolved)];
   }
 
   /**
@@ -717,7 +773,7 @@ class AISlopDetector {
 
     // Special handling for package.json and package-lock.json to detect fresh package versions
     if (filePath.endsWith('package.json') || filePath.endsWith('package-lock.json')) {
-      this.analyzePackageVersions(filePath, content);
+      await this.analyzePackageVersions(filePath, content);
     }
   }
 
@@ -860,7 +916,6 @@ class AISlopDetector {
   async analyzePackageVersions(filePath, content) {
     const minAgeDays = this.config.minPackageAgeDays ?? 7;
     const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
-    const now = Date.now();
     let packageData = {};
     try {
       const pkg = JSON.parse(content);
@@ -868,6 +923,8 @@ class AISlopDetector {
         if (pkg.packages) {
           for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
+            // Skip nested node_modules entries to avoid transitive double-counting
+            if (pkgPath.split('node_modules/').length > 2) continue;
             const name = pkgInfo.name;
             const version = pkgInfo.version;
             if (name && version) {
@@ -875,30 +932,37 @@ class AISlopDetector {
             }
           }
         }
-      } else if (pkg.dependencies) {
-        packageData = {
-          ...pkg.dependencies
-        };
+      } else if (typeof pkg === 'object' && pkg !== null) {
+        const p = pkg;
+        for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+          if (p[key]) {
+            Object.assign(packageData, p[key]);
+          }
+        }
       }
     } catch {
       return;
     }
     for (const [pkgName, version] of Object.entries(packageData)) {
-      if (version.startsWith('^') || version.startsWith('~')) {
-        const actualVersion = version.slice(1);
-        const ageInfo = await this.getNpmPackageAge(pkgName, actualVersion);
-        if (ageInfo && ageInfo.ageMs !== null && ageInfo.ageMs < minAgeMs) {
-          const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
-          this.issues.push({
-            type: 'fresh_package_version',
-            file: filePath,
-            line: 1,
-            column: 1,
-            code: `"${pkgName}": "${version}"`,
-            message: `Package '${pkgName}' v${actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
-            severity: 'medium'
-          });
-        }
+      const {
+        actualVersion,
+        isRange
+      } = parseVersionRange(version);
+      if (!isRange && !filePath.endsWith('package-lock.json')) {
+        continue;
+      }
+      const ageInfo = await this.getNpmPackageAge(pkgName, actualVersion);
+      if (ageInfo && ageInfo.ageMs < minAgeMs) {
+        const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
+        this.issues.push({
+          type: 'fresh_package_version',
+          file: filePath,
+          line: 1,
+          column: 1,
+          code: `"${pkgName}": "${version}"`,
+          message: `Package '${pkgName}' v${actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+          severity: 'medium'
+        });
       }
     }
   }
@@ -1255,21 +1319,36 @@ class AISlopDetector {
 // Run the detector if this script is executed directly
 async function runIfMain() {
   const rootDir = process.cwd();
-  const detector = new AISlopDetector(rootDir);
 
   // Parse command line arguments
+  // Support -- separator: everything after -- is treated as a path, even if it starts with -
   const args = process.argv.slice(2);
+  const doubleDashIdx = args.indexOf('--');
+  let flagArgs;
+  let targetPaths;
+  if (doubleDashIdx !== -1) {
+    flagArgs = args.slice(0, doubleDashIdx);
+    targetPaths = args.slice(doubleDashIdx + 1);
+  } else {
+    flagArgs = args.filter(a => a.startsWith('-'));
+    targetPaths = args.filter(a => !a.startsWith('-'));
+  }
+  const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
 
   // Check for help options first
-  if (args.includes('--help') || args.includes('-h') || args.includes('/?')) {
+  if (flagArgs.includes('--help') || flagArgs.includes('-h') || flagArgs.includes('/?')) {
     console.log(`
-Usage: karpeslop [options]
+Usage: karpeslop [options] [path...]
+
+Arguments:
+  path...         File or directory path(s) to scan (scans all files if omitted)
 
 Options:
   --help, -h     Show this help message
   --quiet, -q    Run in quiet mode (only scan core app files)
   --strict, -s   Exit with code 2 if critical issues (hallucinations) are found
   --version, -v  Show version information
+  --             End of flags; treat remaining args as paths (even if they start with -)
 
 Exit Codes:
   0 - No issues found
@@ -1277,10 +1356,14 @@ Exit Codes:
   2 - Critical issues found (--strict mode only)
 
 Examples:
-  karpeslop                    # Scan all files in current directory
-  karpeslop --quiet            # Scan only core application files
-  karpeslop --strict           # Block on critical issues (hallucinations)
-  karpeslop --help             # Show this help
+  karpeslop                          # Scan all files in current directory
+  karpeslop src/app.ts               # Scan a single file
+  karpeslop src/lib/                 # Scan a directory
+  karpeslop src/app.ts src/lib/      # Scan specific paths
+  karpeslop --quiet                  # Scan only core application files
+  karpeslop --strict src/app.ts      # Block on critical issues in a specific file
+  karpeslop -- -dash-file.ts         # Scan a file whose name starts with -
+  karpeslop --help                   # Show this help
 
 The tool detects the three axes of AI slop:
   1. Information Utility (Noise) - Comments, boilerplate, etc.
@@ -1291,7 +1374,7 @@ The tool detects the three axes of AI slop:
   }
 
   // Check for version options
-  if (args.includes('--version') || args.includes('-v')) {
+  if (flagArgs.includes('--version') || flagArgs.includes('-v')) {
     // Try to get version from package.json
     try {
       const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
@@ -1302,8 +1385,8 @@ The tool detects the three axes of AI slop:
     }
     process.exit(0);
   }
-  const quiet = args.includes('--quiet') || args.includes('-q');
-  const strict = args.includes('--strict') || args.includes('-s') || !!detector.getConfig().blockOnCritical;
+  const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
+  const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || !!detector.getConfig().blockOnCritical;
   try {
     const issues = await detector.detect(quiet);
     // Export results to a JSON file for CI/CD integration
@@ -1313,7 +1396,12 @@ The tool detects the three axes of AI slop:
     // In strict mode, exit with code 2 if there are any critical issues (hallucinations)
     const criticalIssues = issues.filter(i => i.severity === 'critical');
     if (strict && criticalIssues.length > 0) {
-      console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found. Blocking.`);
+      if (targetPaths.length > 0) {
+        const criticalFiles = [...new Set(criticalIssues.map(i => path.relative(rootDir, i.file)))];
+        console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found in: ${criticalFiles.join(', ')}`);
+      } else {
+        console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found. Blocking.`);
+      }
       process.exit(2);
     }
     const exitCode = issues.length > 0 ? 1 : 0;

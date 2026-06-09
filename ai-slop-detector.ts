@@ -85,6 +85,7 @@ function parseVersionRange(version: string): { actualVersion: string; isRange: b
 class AISlopDetector {
   private issues: AISlopIssue[] = [];
   private targetExtensions = ['.ts', '.tsx', '.js', '.jsx'];
+  private manifestFilenames = ['package.json', 'package-lock.json'];
 
   // Core application directories to prioritize in reporting
   private coreAppDirs = ['app/', 'components/', 'lib/', 'hooks/', 'services/'];
@@ -394,6 +395,14 @@ class AISlopDetector {
       }
     }
 
+    // Validate minPackageAgeDays
+    if (cfg.minPackageAgeDays !== undefined) {
+      const v = cfg.minPackageAgeDays;
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+        throw new Error('minPackageAgeDays must be a finite non-negative number');
+      }
+    }
+
     return cfg as KarpeSlopConfig;
   }
 
@@ -538,7 +547,7 @@ class AISlopDetector {
   }
 
   /**
-   * Find all TypeScript/JavaScript files in the project
+   * Find all TypeScript/JavaScript files in the project, plus manifest files
    */
   private findAllFiles(): string[] {
     const allFiles: string[] = [];
@@ -548,6 +557,14 @@ class AISlopDetector {
       const files = glob.sync(pattern, { ignore: this.getGlobIgnorePatterns() });
       const filteredFiles = files.filter(file => !this.isExcludedPath(file));
       allFiles.push(...filteredFiles);
+    }
+
+    // Also pick up manifest files at the project root for package-age analysis
+    for (const name of this.manifestFilenames) {
+      const manifestPath = path.join(this.rootDir, name);
+      if (fs.existsSync(manifestPath) && !this.isExcludedPath(manifestPath)) {
+        allFiles.push(manifestPath);
+      }
     }
 
     // Remove duplicates and return
@@ -571,9 +588,11 @@ class AISlopDetector {
 
       if (stat.isFile()) {
         const ext = path.extname(targetPath);
+        const base = path.basename(targetPath);
+        const isManifest = ext === '.json' && this.manifestFilenames.includes(base);
         if (this.isExcludedPath(targetPath)) {
           console.warn(`⚠️  Target file is in an excluded path, skipping: ${targetPath}`);
-        } else if (this.targetExtensions.includes(ext)) {
+        } else if (this.targetExtensions.includes(ext) || isManifest) {
           resolved.push(targetPath);
         } else {
           console.warn(`⚠️  Target file has unsupported extension (${ext}), skipping: ${targetPath}`);
