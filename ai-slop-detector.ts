@@ -344,6 +344,7 @@ class AISlopDetector {
   private customIgnorePaths: string[] = [];
   private npmPackageCache: Map<string, Record<string, string>> = new Map();
   private registryWarningLogged = false;
+  private registryUnavailable = false;
   private reportedFreshPackageKeys = new Set<string>();
   private targetPaths: string[] = [];
 
@@ -569,17 +570,14 @@ class AISlopDetector {
   private isExcludedPath(filePath: string, allowOutsideRoot: boolean = false): boolean {
     const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
     const isOutsideRoot = relativePath.startsWith('..');
-
-    if (allowOutsideRoot && isOutsideRoot) {
-      return relativePath.endsWith('.d.ts') ||
-        relativePath.endsWith('ai-slop-detector.ts') ||
-        relativePath.endsWith('improved-ai-slop-detector.ts');
-    }
+    const pathToMatch = allowOutsideRoot && isOutsideRoot
+      ? path.resolve(filePath).replace(/\\/g, '/')
+      : relativePath;
 
     // Use segment-based matching so e.g. `src/dist/foo.ts` isn't treated as
     // a build artifact. A real `dist/` directory under `src/` is rare and
     // matching it the way users expect is the lesser evil here.
-    const segments = relativePath.split('/');
+    const segments = pathToMatch.split('/');
     const excludedSegment = (name: string) => segments.includes(name);
     return excludedSegment('generated') ||
       excludedSegment('coverage') ||
@@ -592,9 +590,9 @@ class AISlopDetector {
       excludedSegment('temp') ||
       excludedSegment('types') ||
       segments.some(segment => segment.startsWith('.')) ||
-      relativePath.endsWith('.d.ts') ||
-      relativePath.endsWith('ai-slop-detector.ts') ||
-      relativePath.endsWith('improved-ai-slop-detector.ts');
+      pathToMatch.endsWith('.d.ts') ||
+      (!isOutsideRoot && (pathToMatch.endsWith('ai-slop-detector.ts') ||
+        pathToMatch.endsWith('improved-ai-slop-detector.ts')));
   }
 
   /**
@@ -1202,8 +1200,6 @@ class AISlopDetector {
         if (pkg.packages) {
           for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
-            // Skip nested node_modules entries to avoid transitive double-counting
-            if (pkgPath.split('node_modules/').length > 2) continue;
             const info = pkgInfo as Record<string, unknown>;
             const version = info.version as string;
             const pkgName = typeof info.name === 'string' && info.name
@@ -1250,7 +1246,7 @@ class AISlopDetector {
 
     for (const { sourceId, pkgName, version, ageInfo } of ageInfos) {
       if (ageInfo && ageInfo.ageMs < minAgeMs) {
-        const issueKey = `${filePath}|${sourceId}|${pkgName}|${version}`;
+        const issueKey = `${filePath}|${pkgName}|${version}`;
         if (this.reportedFreshPackageKeys.has(issueKey)) {
           continue;
         }
@@ -1293,6 +1289,10 @@ class AISlopDetector {
       return { version, time: versionTime, ageMs: now - publishTime };
     }
 
+    if (this.registryUnavailable) {
+      return null;
+    }
+
     let data: { time: Record<string, string> } | null = null;
     try {
       const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
@@ -1311,6 +1311,7 @@ class AISlopDetector {
         console.warn('⚠️  Could not reach npm registry to check package ages. fresh_package_version checks will be skipped.');
         this.registryWarningLogged = true;
       }
+      this.registryUnavailable = true;
       return null;
     }
 
