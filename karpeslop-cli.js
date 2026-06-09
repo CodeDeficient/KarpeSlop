@@ -17,6 +17,24 @@ const tsxPathWin = join(__dirname, 'node_modules', '.bin', 'tsx.cmd');
 const isWindows = process.platform === 'win32';
 const tsxCommand = isWindows ? tsxPathWin : tsxPath;
 
+function exitCodeForSignal(signal) {
+  const signalExitCodes = {
+    SIGINT: 130,
+    SIGTERM: 143,
+    SIGHUP: 129,
+    SIGQUIT: 131
+  };
+
+  return signalExitCodes[signal] || 1;
+}
+
+function handleChildExit(code, signal) {
+  if (signal) {
+    process.exit(exitCodeForSignal(signal));
+  }
+  process.exit(code ?? 0);
+}
+
 // Get command line arguments, excluding the first two (node and script path)
 const args = process.argv.slice(2);
 
@@ -42,11 +60,11 @@ child.on('error', (err) => {
       console.error('Fallback execution also failed:', nodeErr.message);
       process.exit(1);
     });
+
+    nodeChild.on('exit', handleChildExit);
   } else {
     process.exit(1);
   }
 });
 
-child.on('exit', (code) => {
-  process.exit(code || 0);
-});
+child.on('exit', handleChildExit);

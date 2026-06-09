@@ -1192,7 +1192,7 @@ class AISlopDetector {
 
     for (const { pkgName, version, ageInfo } of ageInfos) {
       if (ageInfo && ageInfo.ageMs < minAgeMs) {
-        const issueKey = `${pkgName}|${version}`;
+        const issueKey = `${filePath}|${pkgName}|${version}`;
         if (this.reportedFreshPackageKeys.has(issueKey)) {
           continue;
         }
