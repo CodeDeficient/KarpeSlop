@@ -517,8 +517,9 @@ class AISlopDetector {
       relativePath.includes('.git/') ||
       relativePath.includes('out/') ||
       relativePath.includes('temp/') ||
-      relativePath.startsWith('.') ||
+      relativePath.split('/').some(segment => segment.startsWith('.')) ||
       relativePath.includes('/types/') ||
+      relativePath.startsWith('types/') ||
       relativePath.endsWith('.d.ts') ||
       relativePath.endsWith('ai-slop-detector.ts') ||
       relativePath.endsWith('improved-ai-slop-detector.ts');
@@ -558,7 +559,9 @@ class AISlopDetector {
 
       if (stat.isFile()) {
         const ext = path.extname(targetPath);
-        if (this.targetExtensions.includes(ext)) {
+        if (this.isExcludedPath(targetPath)) {
+          console.warn(`⚠️  Target file is in an excluded path, skipping: ${targetPath}`);
+        } else if (this.targetExtensions.includes(ext)) {
           resolved.push(targetPath);
         } else {
           console.warn(`⚠️  Target file has unsupported extension (${ext}), skipping: ${targetPath}`);
