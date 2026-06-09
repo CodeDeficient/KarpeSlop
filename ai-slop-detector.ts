@@ -72,14 +72,37 @@ interface KarpeSlopConfig {
 }
 
 /**
- * Parse a semver range string (e.g. "^1.2.3", "~1.2.3", "1.2.3") into the
- * concrete version and whether the original was a range.
+ * Parse a semver string into the concrete version and whether the original
+ * was a floating caret/tilde range.
+ *
+ * We intentionally only treat `^` and `~` as eligible for the package-age
+ * check because those are the common semver ranges that drift on install.
+ * Broader operators like `>=`, `1.x`, or `latest` are not resolved here.
  */
 function parseVersionRange(version: string): { actualVersion: string; isRange: boolean } {
   if (version.startsWith('^') || version.startsWith('~')) {
     return { actualVersion: version.slice(1), isRange: true };
   }
   return { actualVersion: version, isRange: false };
+}
+
+/**
+ * Run an array of async tasks with bounded concurrency. Used to throttle
+ * outbound HTTP calls to the npm registry (which rate-limits unauthenticated
+ * callers at ~600 req/min).
+ */
+async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= tasks.length) return;
+      results[i] = await tasks[i]();
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 class AISlopDetector {
@@ -529,19 +552,22 @@ class AISlopDetector {
 
   private isExcludedPath(filePath: string): boolean {
     const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
-    return relativePath.includes('generated/') ||
-      relativePath.includes('/generated') ||
-      relativePath.startsWith('generated/') ||
-      relativePath.includes('coverage/') ||
-      relativePath.includes('.next/') ||
-      relativePath.includes('node_modules/') ||
-      relativePath.includes('dist/') ||
-      relativePath.includes('build/') ||
-      relativePath.includes('.git/') ||
-      relativePath.includes('out/') ||
-      relativePath.includes('temp/') ||
-      relativePath.split('/').some(segment => segment.startsWith('.')) ||
-      relativePath.split('/').includes('types') ||
+    // Use segment-based matching so e.g. `src/dist/foo.ts` isn't treated as
+    // a build artifact. A real `dist/` directory under `src/` is rare and
+    // matching it the way users expect is the lesser evil here.
+    const segments = relativePath.split('/');
+    const excludedSegment = (name: string) => segments.includes(name);
+    return excludedSegment('generated') ||
+      excludedSegment('coverage') ||
+      excludedSegment('.next') ||
+      excludedSegment('node_modules') ||
+      excludedSegment('dist') ||
+      excludedSegment('build') ||
+      excludedSegment('.git') ||
+      excludedSegment('out') ||
+      excludedSegment('temp') ||
+      excludedSegment('types') ||
+      segments.some(segment => segment.startsWith('.')) ||
       relativePath.endsWith('.d.ts') ||
       relativePath.endsWith('ai-slop-detector.ts') ||
       relativePath.endsWith('improved-ai-slop-detector.ts');
@@ -604,6 +630,15 @@ class AISlopDetector {
           const files = glob.sync(pattern, { ignore: this.getGlobIgnorePatterns() });
           const filteredFiles = files.filter(file => !this.isExcludedPath(file));
           resolved.push(...filteredFiles);
+        }
+        // Also pick up manifest files so fresh_package_version rule still fires
+        // when user targets a directory (e.g. `karpeslop src/lib/` with a
+        // package.json inside that directory)
+        for (const manifestName of this.manifestFilenames) {
+          const manifestPath = path.join(targetPath, manifestName);
+          if (fs.existsSync(manifestPath) && !this.isExcludedPath(manifestPath)) {
+            resolved.push(manifestPath);
+          }
         }
       }
     }
@@ -1130,16 +1165,22 @@ class AISlopDetector {
       return;
     }
 
-    const entries = Object.entries(packageData).filter(([, version]) => {
-      const { isRange } = parseVersionRange(version);
-      return isRange || filePath.endsWith('package-lock.json');
-    });
+    const entries = Object.entries(packageData)
+      .map(([pkgName, version]) => ({ pkgName, ...parseVersionRange(version) }))
+      // Keep the rule narrow on purpose: only caret/tilde ranges are treated
+      // as "fresh package" candidates in package.json. package-lock.json is
+      // always checked because it contains the resolved version.
+      .filter(({ isRange }) => isRange || filePath.endsWith('package-lock.json'));
 
-    const ageInfos = await Promise.all(
-      entries.map(([pkgName, version]) =>
-        this.getNpmPackageAge(pkgName, parseVersionRange(version).actualVersion)
-          .then(ageInfo => ({ pkgName, version, ageInfo }))
-      )
+    // Bound concurrency: npm registry rate-limits unauthenticated callers at
+    // ~600 req/min, and a typical package-lock.json has 200-1000 deps.
+    const NPM_CONCURRENCY = 5;
+    const ageInfos = await pLimit(
+      entries.map(({ pkgName, actualVersion }) => () =>
+        this.getNpmPackageAge(pkgName, actualVersion)
+          .then(ageInfo => ({ pkgName, version: actualVersion, ageInfo }))
+      ),
+      NPM_CONCURRENCY
     );
 
     for (const { pkgName, version, ageInfo } of ageInfos) {
@@ -1151,7 +1192,7 @@ class AISlopDetector {
           line: 1,
           column: 1,
           code: `"${pkgName}": "${version}"`,
-          message: `Package '${pkgName}' v${parseVersionRange(version).actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+          message: `Package '${pkgName}' v${version} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
           severity: 'medium'
         });
       }
@@ -1168,11 +1209,14 @@ class AISlopDetector {
 
     const cached = this.npmPackageCache.get(pkgName);
     if (cached) {
+      // Cached map contains every version the registry knows about. If our
+      // requested version isn't here, the version genuinely doesn't exist
+      // (or was unpublished) — don't refetch, that would just re-fetch the
+      // same map we already have.
       const versionTime = cached[version];
-      if (versionTime) {
-        const publishTime = new Date(versionTime).getTime();
-        return { version, time: versionTime, ageMs: now - publishTime };
-      }
+      if (!versionTime) return null;
+      const publishTime = new Date(versionTime).getTime();
+      return { version, time: versionTime, ageMs: now - publishTime };
     }
 
     let data: { time: Record<string, string> } | null = null;
