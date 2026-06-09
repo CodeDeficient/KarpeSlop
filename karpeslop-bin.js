@@ -413,6 +413,9 @@ class AISlopDetector {
     if (this.targetPaths.length > 0) {
       filesToAnalyze = this.resolveTargetPaths();
       console.log(`🎯 Targeting ${filesToAnalyze.length} file(s) (explicit paths)\n`);
+      if (filesToAnalyze.length === 0) {
+        throw new Error('No valid target files found for the supplied paths');
+      }
     } else {
       const allFiles = this.findAllFiles();
       filesToAnalyze = quiet ? allFiles.filter(file => {
@@ -480,7 +483,7 @@ class AISlopDetector {
     for (const name of this.manifestFilenames) {
       const rootManifestPath = path.join(this.rootDir, name);
       const nestedPattern = path.join(this.rootDir, '**', name).replace(/\\/g, '/');
-      const manifestFiles = [...(fs.existsSync(rootManifestPath) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
+      const manifestFiles = [...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !this.isExcludedPath(rootManifestPath) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
         ignore: this.getGlobIgnorePatterns()
       })].filter(file => !this.isExcludedPath(file));
       allFiles.push(...manifestFiles);
@@ -529,7 +532,7 @@ class AISlopDetector {
           // fresh_package_version rule still fires in monorepos/workspaces.
           const rootManifestPath = path.join(targetPath, manifestName);
           const nestedPattern = path.join(targetPath, '**', manifestName).replace(/\\/g, '/');
-          const manifestFiles = [...(fs.existsSync(rootManifestPath) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
+          const manifestFiles = [...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !this.isExcludedPath(rootManifestPath, true) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
             ignore: this.getGlobIgnorePatterns()
           })].filter(file => !this.isExcludedPath(file, true));
           resolved.push(...manifestFiles);

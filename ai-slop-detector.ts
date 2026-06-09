@@ -501,6 +501,9 @@ class AISlopDetector {
     if (this.targetPaths.length > 0) {
       filesToAnalyze = this.resolveTargetPaths();
       console.log(`🎯 Targeting ${filesToAnalyze.length} file(s) (explicit paths)\n`);
+      if (filesToAnalyze.length === 0) {
+        throw new Error('No valid target files found for the supplied paths');
+      }
     } else {
       const allFiles = this.findAllFiles();
 
@@ -613,7 +616,9 @@ class AISlopDetector {
       const rootManifestPath = path.join(this.rootDir, name);
       const nestedPattern = path.join(this.rootDir, '**', name).replace(/\\/g, '/');
       const manifestFiles = [
-        ...(fs.existsSync(rootManifestPath) ? [rootManifestPath] : []),
+        ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !this.isExcludedPath(rootManifestPath)
+          ? [rootManifestPath]
+          : []),
         ...glob.sync(nestedPattern, { ignore: this.getGlobIgnorePatterns() })
       ].filter(file => !this.isExcludedPath(file));
       allFiles.push(...manifestFiles);
@@ -664,7 +669,9 @@ class AISlopDetector {
           const rootManifestPath = path.join(targetPath, manifestName);
           const nestedPattern = path.join(targetPath, '**', manifestName).replace(/\\/g, '/');
           const manifestFiles = [
-            ...(fs.existsSync(rootManifestPath) ? [rootManifestPath] : []),
+            ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !this.isExcludedPath(rootManifestPath, true)
+              ? [rootManifestPath]
+              : []),
             ...glob.sync(nestedPattern, { ignore: this.getGlobIgnorePatterns() })
           ].filter(file => !this.isExcludedPath(file, true));
           resolved.push(...manifestFiles);
