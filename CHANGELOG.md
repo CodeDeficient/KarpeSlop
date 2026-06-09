@@ -2,6 +2,22 @@
 
 All notable changes will be documented in this file.
 
+## [1.0.25] - 2026-06-09
+
+### Added
+- **Positional path arguments**: `karpeslop [options] [path...]` accepts file or directory targets so scans can focus on a single file or subset. The `--strict` mode now reports which targeted file(s) had critical issues.
+- **`--` separator**: Use `--` to mark the end of flags, so paths starting with `-` aren't misclassified as flags.
+- **Manifest file discovery**: `findAllFiles()` now picks up `package.json`/`package-lock.json` at the project root, and `resolveTargetPaths()` accepts `.json` for the two manifest filenames — making the `fresh_package_version` rule reachable from both full and targeted scans.
+- **`--quiet` includes manifests**: Even with `--quiet`, the two manifest files are still analyzed so package freshness warnings aren't lost.
+
+### Fixed
+- **package-lock.json bin entry**: Aligned to `karpeslop-cli.js` (matching `package.json`).
+- **Config validation**: `minPackageAgeDays` now rejects non-finite/negative values at load time instead of silently producing NaN.
+
+### Refactored
+- Shared `getGlobIgnorePatterns()` and `isExcludedPath()` between `findAllFiles()` and `resolveTargetPaths()` so both paths use the same exclusion logic.
+- `isExcludedPath` flattened with De Morgan's law; segment-based check for dotfiles and `types/`.
+
 ## [1.0.24] - 2026-04-04
 
 ### Fixed
