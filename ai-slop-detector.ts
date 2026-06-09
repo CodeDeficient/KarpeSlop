@@ -71,6 +71,17 @@ interface KarpeSlopConfig {
   minPackageAgeDays?: number;
 }
 
+/**
+ * Parse a semver range string (e.g. "^1.2.3", "~1.2.3", "1.2.3") into the
+ * concrete version and whether the original was a range.
+ */
+function parseVersionRange(version: string): { actualVersion: string; isRange: boolean } {
+  if (version.startsWith('^') || version.startsWith('~')) {
+    return { actualVersion: version.slice(1), isRange: true };
+  }
+  return { actualVersion: version, isRange: false };
+}
+
 class AISlopDetector {
   private issues: AISlopIssue[] = [];
   private targetExtensions = ['.ts', '.tsx', '.js', '.jsx'];
@@ -462,6 +473,8 @@ class AISlopDetector {
       filesToAnalyze = quiet
         ? allFiles.filter(file => {
           const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
+          const base = path.basename(file);
+          if (base === 'package.json' || base === 'package-lock.json') return true;
           return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
         })
         : allFiles;
@@ -912,7 +925,7 @@ class AISlopDetector {
 
     // Special handling for package.json and package-lock.json to detect fresh package versions
     if (filePath.endsWith('package.json') || filePath.endsWith('package-lock.json')) {
-      this.analyzePackageVersions(filePath, content);
+      await this.analyzePackageVersions(filePath, content);
     }
   }
 
@@ -1064,7 +1077,6 @@ class AISlopDetector {
   private async analyzePackageVersions(filePath: string, content: string): Promise<void> {
     const minAgeDays = this.config.minPackageAgeDays ?? 7;
     const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
-    const now = Date.now();
 
     let packageData: Record<string, string> = {};
 
@@ -1075,6 +1087,8 @@ class AISlopDetector {
         if (pkg.packages) {
           for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
+            // Skip nested node_modules entries to avoid transitive double-counting
+            if (pkgPath.split('node_modules/').length > 2) continue;
             const name = (pkgInfo as Record<string, unknown>).name as string;
             const version = (pkgInfo as Record<string, unknown>).version as string;
             if (name && version) {
@@ -1082,29 +1096,35 @@ class AISlopDetector {
             }
           }
         }
-      } else if (pkg.dependencies) {
-        packageData = { ...pkg.dependencies };
+      } else if (typeof pkg === 'object' && pkg !== null) {
+        const p = pkg as Record<string, Record<string, string> | undefined>;
+        for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+          if (p[key]) {
+            Object.assign(packageData, p[key]);
+          }
+        }
       }
     } catch {
       return;
     }
 
     for (const [pkgName, version] of Object.entries(packageData)) {
-      if (version.startsWith('^') || version.startsWith('~')) {
-        const actualVersion = version.slice(1);
-        const ageInfo = await this.getNpmPackageAge(pkgName, actualVersion);
-        if (ageInfo && ageInfo.ageMs !== null && ageInfo.ageMs < minAgeMs) {
-          const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
-          this.issues.push({
-            type: 'fresh_package_version',
-            file: filePath,
-            line: 1,
-            column: 1,
-            code: `"${pkgName}": "${version}"`,
-            message: `Package '${pkgName}' v${actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
-            severity: 'medium'
-          });
-        }
+      const { actualVersion, isRange } = parseVersionRange(version);
+      if (!isRange && !filePath.endsWith('package-lock.json')) {
+        continue;
+      }
+      const ageInfo = await this.getNpmPackageAge(pkgName, actualVersion);
+      if (ageInfo && ageInfo.ageMs < minAgeMs) {
+        const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
+        this.issues.push({
+          type: 'fresh_package_version',
+          file: filePath,
+          line: 1,
+          column: 1,
+          code: `"${pkgName}": "${version}"`,
+          message: `Package '${pkgName}' v${actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+          severity: 'medium'
+        });
       }
     }
   }
