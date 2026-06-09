@@ -319,7 +319,8 @@ class AISlopDetector {
 
   private config: KarpeSlopConfig = {};
   private customIgnorePaths: string[] = [];
-  private npmPackageCache: Map<string, { time: string; version: string }[]> = new Map();
+  private npmPackageCache: Map<string, Record<string, string>> = new Map();
+  private registryWarningLogged = false;
   private targetPaths: string[] = [];
 
   constructor(private rootDir: string, targetPaths?: string[]) {
@@ -1108,9 +1109,10 @@ class AISlopDetector {
             if (pkgPath === '' || pkgPath === 'node_modules/') continue;
             // Skip nested node_modules entries to avoid transitive double-counting
             if (pkgPath.split('node_modules/').length > 2) continue;
-            const info = pkgInfo as Record<string, unknown>;
-            const name = (info.name as string) || pkgPath.split('node_modules/').pop()!;
-            const version = info.version as string;
+            const version = (pkgInfo as Record<string, unknown>).version as string;
+            // pkgPath looks like "node_modules/foo" or "node_modules/@scope/bar"
+            // The last segment is always the package name for non-root entries
+            const name = pkgPath.split('node_modules/').pop()!;
             if (name && version) {
               packageData[name] = version;
             }
@@ -1128,12 +1130,19 @@ class AISlopDetector {
       return;
     }
 
-    for (const [pkgName, version] of Object.entries(packageData)) {
-      const { actualVersion, isRange } = parseVersionRange(version);
-      if (!isRange && !filePath.endsWith('package-lock.json')) {
-        continue;
-      }
-      const ageInfo = await this.getNpmPackageAge(pkgName, actualVersion);
+    const entries = Object.entries(packageData).filter(([, version]) => {
+      const { isRange } = parseVersionRange(version);
+      return isRange || filePath.endsWith('package-lock.json');
+    });
+
+    const ageInfos = await Promise.all(
+      entries.map(([pkgName, version]) =>
+        this.getNpmPackageAge(pkgName, parseVersionRange(version).actualVersion)
+          .then(ageInfo => ({ pkgName, version, ageInfo }))
+      )
+    );
+
+    for (const { pkgName, version, ageInfo } of ageInfos) {
       if (ageInfo && ageInfo.ageMs < minAgeMs) {
         const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
         this.issues.push({
@@ -1142,7 +1151,7 @@ class AISlopDetector {
           line: 1,
           column: 1,
           code: `"${pkgName}": "${version}"`,
-          message: `Package '${pkgName}' v${actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+          message: `Package '${pkgName}' v${parseVersionRange(version).actualVersion} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
           severity: 'medium'
         });
       }
@@ -1150,20 +1159,23 @@ class AISlopDetector {
   }
 
   /**
-   * Get npm package version age info with caching
+   * Get npm package version age info with caching.
+   * Cache stores the full `time` map from the registry so repeated lookups
+   * for different versions of the same package don't re-fetch the package.
    */
   private async getNpmPackageAge(pkgName: string, version: string): Promise<{ version: string; time: string; ageMs: number } | null> {
     const now = Date.now();
 
     const cached = this.npmPackageCache.get(pkgName);
     if (cached) {
-      const found = cached.find(v => v.version === version);
-      if (found) {
-        const publishTime = new Date(found.time).getTime();
-        return { version, time: found.time, ageMs: now - publishTime };
+      const versionTime = cached[version];
+      if (versionTime) {
+        const publishTime = new Date(versionTime).getTime();
+        return { version, time: versionTime, ageMs: now - publishTime };
       }
     }
 
+    let data: { time: Record<string, string> } | null = null;
     try {
       const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
       const controller = new AbortController();
@@ -1175,22 +1187,22 @@ class AISlopDetector {
         clearTimeout(timer);
       }
       if (!response.ok) return null;
-
-      const data = (await response.json()) as { time: Record<string, string> };
-      const versionTime = data.time?.[version];
-      if (!versionTime) return null;
-
-      const publishTime = new Date(versionTime).getTime();
-
-      if (!this.npmPackageCache.has(pkgName)) {
-        this.npmPackageCache.set(pkgName, []);
-      }
-      this.npmPackageCache.get(pkgName)!.push({ time: versionTime, version });
-
-      return { version, time: versionTime, ageMs: now - publishTime };
+      data = (await response.json()) as { time: Record<string, string> };
     } catch {
+      if (!this.registryWarningLogged) {
+        console.warn('⚠️  Could not reach npm registry to check package ages. fresh_package_version checks will be skipped.');
+        this.registryWarningLogged = true;
+      }
       return null;
     }
+
+    if (data?.time) {
+      this.npmPackageCache.set(pkgName, data.time);
+    }
+    const versionTime = data?.time?.[version];
+    if (!versionTime) return null;
+    const publishTime = new Date(versionTime).getTime();
+    return { version, time: versionTime, ageMs: now - publishTime };
   }
 
   /**
@@ -1549,9 +1561,8 @@ async function runIfMain() {
     targetPaths = args.filter(a => !a.startsWith('-'));
   }
 
-  const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
-
-  // Check for help options first
+  // Check for help options first, before constructing the detector
+  // (so a bad config doesn't break --help)
   if (flagArgs.includes('--help') || flagArgs.includes('-h') || flagArgs.includes('/?')) {
     console.log(`
 Usage: karpeslop [options] [path...]
@@ -1602,6 +1613,7 @@ The tool detects the three axes of AI slop:
     process.exit(0);
   }
 
+  const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
     const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
     const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || !!detector.getConfig().blockOnCritical;
 
