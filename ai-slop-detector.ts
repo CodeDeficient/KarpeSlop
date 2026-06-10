@@ -1752,8 +1752,8 @@ Options:
   --             End of flags; treat remaining args as paths (even if they start with -)
 
 Exit Codes:
-  0 - No issues found
-  1 - Issues found (warnings/errors)
+  0 - No issues found, or only fresh package warnings were found
+  1 - Blocking issues found (warnings/errors other than fresh package warnings)
   2 - Critical issues found (--strict mode only)
 
 Examples:
