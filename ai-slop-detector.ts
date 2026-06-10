@@ -79,7 +79,7 @@ interface KarpeSlopConfig {
  * check because those are the common semver ranges that drift on install.
  * Broader operators like `>=`, `1.x`, or `latest` are not resolved here.
  */
-function parseVersionRange(version: string): { actualVersion: string; isRange: boolean } {
+export function parseVersionRange(version: string): { actualVersion: string; isRange: boolean } {
   if (version.startsWith('^') || version.startsWith('~')) {
     return { actualVersion: version.slice(1), isRange: true };
   }
@@ -123,6 +123,38 @@ export function hasOnlyFreshPackageWarnings(
   issues: ReadonlyArray<Pick<AISlopIssue, 'type'>>
 ): boolean {
   return issues.length > 0 && issues.every(issue => issue.type === 'fresh_package_version');
+}
+
+/**
+ * Determine whether a file path should be excluded from analysis.
+ *
+ * Segment-based matching means any file under e.g. `src/dist/` is still excluded
+ * because `dist` exists as a segment. Matching `dist` everywhere is the simpler,
+ * reliable choice for a build-artifact filter.
+ */
+export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRoot: boolean = false): boolean {
+  const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
+  const isOutsideRoot = relativePath.startsWith('..');
+  const pathToMatch = allowOutsideRoot && isOutsideRoot
+    ? path.resolve(filePath).replace(/\\/g, '/')
+    : relativePath;
+
+  const segments = pathToMatch.split('/');
+  const excludedSegment = (name: string) => segments.includes(name);
+  return excludedSegment('generated') ||
+    excludedSegment('coverage') ||
+    excludedSegment('.next') ||
+    excludedSegment('node_modules') ||
+    excludedSegment('dist') ||
+    excludedSegment('build') ||
+    excludedSegment('.git') ||
+    excludedSegment('out') ||
+    excludedSegment('temp') ||
+    excludedSegment('types') ||
+    segments.some(segment => segment.startsWith('.')) ||
+    pathToMatch.endsWith('.d.ts') ||
+    (!isOutsideRoot && (pathToMatch.endsWith('ai-slop-detector.ts') ||
+      pathToMatch.endsWith('improved-ai-slop-detector.ts')));
 }
 
 class AISlopDetector {
@@ -589,34 +621,6 @@ class AISlopDetector {
     }).length === 0;
   }
 
-  private isExcludedPath(filePath: string, allowOutsideRoot: boolean = false): boolean {
-    const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
-    const isOutsideRoot = relativePath.startsWith('..');
-    const pathToMatch = allowOutsideRoot && isOutsideRoot
-      ? path.resolve(filePath).replace(/\\/g, '/')
-      : relativePath;
-
-    // Use segment-based matching so e.g. `src/dist/foo.ts` isn't treated as
-    // a build artifact. A real `dist/` directory under `src/` is rare and
-    // matching it the way users expect is the lesser evil here.
-    const segments = pathToMatch.split('/');
-    const excludedSegment = (name: string) => segments.includes(name);
-    return excludedSegment('generated') ||
-      excludedSegment('coverage') ||
-      excludedSegment('.next') ||
-      excludedSegment('node_modules') ||
-      excludedSegment('dist') ||
-      excludedSegment('build') ||
-      excludedSegment('.git') ||
-      excludedSegment('out') ||
-      excludedSegment('temp') ||
-      excludedSegment('types') ||
-      segments.some(segment => segment.startsWith('.')) ||
-      pathToMatch.endsWith('.d.ts') ||
-      (!isOutsideRoot && (pathToMatch.endsWith('ai-slop-detector.ts') ||
-        pathToMatch.endsWith('improved-ai-slop-detector.ts')));
-  }
-
   /**
    * Find all TypeScript/JavaScript files in the project, plus manifest files
    */
@@ -626,7 +630,7 @@ class AISlopDetector {
     for (const ext of this.targetExtensions) {
       const pattern = path.join(this.rootDir, `**/*${ext}`).replace(/\\/g, '/');
       const files = glob.sync(pattern, { ignore: this.getGlobIgnorePatterns() });
-      const filteredFiles = files.filter(file => !this.isExcludedPath(file));
+      const filteredFiles = files.filter(file => !isExcludedPath(file, this.rootDir));
       allFiles.push(...filteredFiles);
     }
 
@@ -636,11 +640,11 @@ class AISlopDetector {
       const rootManifestPath = path.join(this.rootDir, name);
       const nestedPattern = path.join(this.rootDir, '**', name).replace(/\\/g, '/');
       const manifestFiles = [
-        ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !this.isExcludedPath(rootManifestPath)
+        ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir)
           ? [rootManifestPath]
           : []),
         ...glob.sync(nestedPattern, { ignore: this.getGlobIgnorePatterns() })
-      ].filter(file => !this.isExcludedPath(file));
+      ].filter(file => !isExcludedPath(file, this.rootDir));
       allFiles.push(...manifestFiles);
     }
 
@@ -669,7 +673,7 @@ class AISlopDetector {
         const isManifest = ext === '.json' && this.manifestFilenames.includes(base);
         if (this.isIgnoredByConfig(targetPath)) {
           console.warn(`⚠️  Target file matches ignore paths, skipping: ${targetPath}`);
-        } else if (this.isExcludedPath(targetPath, true)) {
+        } else if (isExcludedPath(targetPath, this.rootDir, true)) {
           console.warn(`⚠️  Target file is in an excluded path, skipping: ${targetPath}`);
         } else if (this.targetExtensions.includes(ext) || isManifest) {
           resolved.push(targetPath);
@@ -680,7 +684,7 @@ class AISlopDetector {
         for (const ext of this.targetExtensions) {
           const pattern = path.join(targetPath, `**/*${ext}`).replace(/\\/g, '/');
           const files = glob.sync(pattern, { ignore: this.getGlobIgnorePatterns() });
-          const filteredFiles = files.filter(file => !this.isExcludedPath(file, true));
+          const filteredFiles = files.filter(file => !isExcludedPath(file, this.rootDir, true));
           resolved.push(...filteredFiles);
         }
         for (const manifestName of this.manifestFilenames) {
@@ -689,11 +693,11 @@ class AISlopDetector {
           const rootManifestPath = path.join(targetPath, manifestName);
           const nestedPattern = path.join(targetPath, '**', manifestName).replace(/\\/g, '/');
           const manifestFiles = [
-            ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !this.isExcludedPath(rootManifestPath, true)
+            ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir, true)
               ? [rootManifestPath]
               : []),
             ...glob.sync(nestedPattern, { ignore: this.getGlobIgnorePatterns() })
-          ].filter(file => !this.isExcludedPath(file, true));
+          ].filter(file => !isExcludedPath(file, this.rootDir, true));
           resolved.push(...manifestFiles);
         }
       }
@@ -1715,23 +1719,20 @@ class AISlopDetector {
 }
 
 // Run the detector if this script is executed directly
+export function splitCliArgs(args: readonly string[]): { flagArgs: string[]; targetPaths: string[] } {
+  // Support -- separator: everything after -- is treated as a path, even if it starts with -
+  const doubleDashIdx = args.indexOf('--');
+  if (doubleDashIdx !== -1) {
+    return { flagArgs: args.slice(0, doubleDashIdx), targetPaths: args.slice(doubleDashIdx + 1) };
+  }
+  return { flagArgs: args.filter(a => a.startsWith('-')), targetPaths: args.filter(a => !a.startsWith('-')) };
+}
+
 async function runIfMain() {
   const rootDir = process.cwd();
 
-  // Parse command line arguments
-  // Support -- separator: everything after -- is treated as a path, even if it starts with -
   const args = process.argv.slice(2);
-  const doubleDashIdx = args.indexOf('--');
-  let flagArgs: string[];
-  let targetPaths: string[];
-
-  if (doubleDashIdx !== -1) {
-    flagArgs = args.slice(0, doubleDashIdx);
-    targetPaths = args.slice(doubleDashIdx + 1);
-  } else {
-    flagArgs = args.filter(a => a.startsWith('-'));
-    targetPaths = args.filter(a => !a.startsWith('-'));
-  }
+  const { flagArgs, targetPaths } = splitCliArgs(args);
 
   // Check for help options first, before constructing the detector
   // (so a bad config doesn't break --help)
@@ -1786,8 +1787,8 @@ The tool detects the three axes of AI slop:
   }
 
   const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
-    const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
-    const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || !!detector.getConfig().blockOnCritical;
+  const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
+  const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || !!detector.getConfig().blockOnCritical;
 
   try {
     const issues = await detector.detect(quiet);
