@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "babel ai-slop-detector.ts --out-file karpeslop-bin.js --extensions \".ts,.tsx\"",
+    "test": "node --import tsx --test tests/*.test.ts",
     "slop": "tsx ai-slop-detector.ts",
     "slop:quiet": "tsx ai-slop-detector.ts --quiet",
     "slop:report": "tsx ai-slop-detector.ts && cat ai-slop-report.json"
