@@ -2,6 +2,16 @@
 
 All notable changes will be documented in this file.
 
+## [1.0.26] - 2026-06-10
+
+### Fixed
+- **Null lockfile entries**: npm lockfile v3 allows `null` for linked workspace packages; these now skip gracefully instead of throwing a TypeError that silently aborts freshness analysis for the entire lockfile.
+- **Glob metacharacters in file paths**: `isIgnoredByConfig` now escapes `[`, `*`, `?`, `{`, `}` in literal paths before passing them to `glob.sync`, so files like `src/[test].ts` are no longer misclassified as ignored.
+- **Dead branch in generateReport**: Removed unreachable `this.issues.length === 0` check after the early return that already handles the zero-issues case.
+- **Published CLI wrapper**: `karpeslop-cli.js` resolves `tsx` from the package dependency graph instead of assuming a package-local `.bin/tsx` path, so normal installs no longer print an `ENOENT` before startup.
+- **Exit code docs**: Help text and `README.md` now document that `fresh_package_version` findings are informational and exit with code `0` when they are the only issues.
+- **Package cleanup**: Removed `karpeslop-bin.js` (68KB babel artifact) and `karpeslop.js` (duplicate wrapper without signal handling) from the npm package and git tracking. The published package is now 24KB instead of 92KB.
+
 ## [1.0.25] - 2026-06-09
 
 ### Added
@@ -12,9 +22,7 @@ All notable changes will be documented in this file.
 
 ### Fixed
 - **package-lock.json bin entry**: Aligned to `karpeslop-cli.js` (matching `package.json`).
-- **Published CLI wrapper**: `karpeslop-cli.js` now resolves `tsx` from the package dependency graph instead of assuming a package-local `.bin/tsx` path, so normal installs no longer print an `ENOENT` before startup.
 - **Config validation**: `minPackageAgeDays` now rejects non-finite/negative values at load time instead of silently producing NaN.
-- **Exit code docs**: Help text and `README.md` now document that `fresh_package_version` findings are informational and exit with code `0` when they are the only issues.
 
 ### Refactored
 - Shared `getGlobIgnorePatterns()` and `isExcludedPath()` between `findAllFiles()` and `resolveTargetPaths()` so both paths use the same exclusion logic.

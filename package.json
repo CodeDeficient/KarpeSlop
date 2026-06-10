@@ -1,6 +1,6 @@
 {
   "name": "karpeslop",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "The linter Andrej Karpathy wishes existed. Detects the three axes of AI slop with extreme prejudice.",
   "type": "module",
   "bin": {
