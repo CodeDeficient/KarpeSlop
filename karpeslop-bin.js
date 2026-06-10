@@ -1043,6 +1043,7 @@ class AISlopDetector {
             // registry-installed dependencies, so they should not be checked
             // for package freshness.
             if (!isRegistryBackedLockfileEntry(pkgPath)) continue;
+            if (pkgInfo === null || pkgInfo === undefined) continue;
             const info = pkgInfo;
             const version = info.version;
             const pkgName = typeof info.name === 'string' && info.name ? info.name : pkgPath.split('node_modules/').pop() || pkgPath;
