@@ -12,6 +12,8 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
+const globSync = glob.sync;
+const globEscape = glob.escape;
 
 // Phase 6: Configuration file support
 
@@ -475,7 +477,7 @@ class AISlopDetector {
     if (relativePath.startsWith('..')) {
       return false;
     }
-    return glob.sync(relativePath, {
+    return globSync(globEscape(relativePath), {
       cwd: this.rootDir,
       ignore: this.getGlobIgnorePatterns()
     }).length === 0;
@@ -488,7 +490,7 @@ class AISlopDetector {
     const allFiles = [];
     for (const ext of this.targetExtensions) {
       const pattern = path.join(this.rootDir, `**/*${ext}`).replace(/\\/g, '/');
-      const files = glob.sync(pattern, {
+      const files = globSync(pattern, {
         ignore: this.getGlobIgnorePatterns()
       });
       const filteredFiles = files.filter(file => !isExcludedPath(file, this.rootDir));
@@ -500,7 +502,7 @@ class AISlopDetector {
     for (const name of this.manifestFilenames) {
       const rootManifestPath = path.join(this.rootDir, name);
       const nestedPattern = path.join(this.rootDir, '**', name).replace(/\\/g, '/');
-      const manifestFiles = [...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
+      const manifestFiles = [...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir) ? [rootManifestPath] : []), ...globSync(nestedPattern, {
         ignore: this.getGlobIgnorePatterns()
       })].filter(file => !isExcludedPath(file, this.rootDir));
       allFiles.push(...manifestFiles);
@@ -538,7 +540,7 @@ class AISlopDetector {
       } else if (stat.isDirectory()) {
         for (const ext of this.targetExtensions) {
           const pattern = path.join(targetPath, `**/*${ext}`).replace(/\\/g, '/');
-          const files = glob.sync(pattern, {
+          const files = globSync(pattern, {
             ignore: this.getGlobIgnorePatterns()
           });
           const filteredFiles = files.filter(file => !isExcludedPath(file, this.rootDir, true));
@@ -549,7 +551,7 @@ class AISlopDetector {
           // fresh_package_version rule still fires in monorepos/workspaces.
           const rootManifestPath = path.join(targetPath, manifestName);
           const nestedPattern = path.join(targetPath, '**', manifestName).replace(/\\/g, '/');
-          const manifestFiles = [...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir, true) ? [rootManifestPath] : []), ...glob.sync(nestedPattern, {
+          const manifestFiles = [...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir, true) ? [rootManifestPath] : []), ...globSync(nestedPattern, {
             ignore: this.getGlobIgnorePatterns()
           })].filter(file => !isExcludedPath(file, this.rootDir, true));
           resolved.push(...manifestFiles);
