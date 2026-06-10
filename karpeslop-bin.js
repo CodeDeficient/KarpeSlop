@@ -1609,7 +1609,7 @@ The tool detects the three axes of AI slop:
       }
       process.exit(2);
     }
-    const exitCode = issues.length > 0 ? 1 : 0;
+    const exitCode = hasOnlyFreshPackageWarnings(issues) ? 0 : issues.length > 0 ? 1 : 0;
     process.exit(exitCode);
   } catch (error) {
     console.error('💥 AI Slop detection failed:', error);
