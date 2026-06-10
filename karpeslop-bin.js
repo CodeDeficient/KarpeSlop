@@ -854,7 +854,7 @@ class AISlopDetector {
     }
 
     // Special handling for package.json and package-lock.json to detect fresh package versions
-    if (filePath.endsWith('package.json') || filePath.endsWith('package-lock.json')) {
+    if (path.basename(filePath) === 'package.json' || path.basename(filePath) === 'package-lock.json') {
       await this.analyzePackageVersions(filePath, content);
     }
   }
