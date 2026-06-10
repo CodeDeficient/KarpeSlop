@@ -12,7 +12,9 @@ All notable changes will be documented in this file.
 
 ### Fixed
 - **package-lock.json bin entry**: Aligned to `karpeslop-cli.js` (matching `package.json`).
+- **Published CLI wrapper**: `karpeslop-cli.js` now resolves `tsx` from the package dependency graph instead of assuming a package-local `.bin/tsx` path, so normal installs no longer print an `ENOENT` before startup.
 - **Config validation**: `minPackageAgeDays` now rejects non-finite/negative values at load time instead of silently producing NaN.
+- **Exit code docs**: Help text and `README.md` now document that `fresh_package_version` findings are informational and exit with code `0` when they are the only issues.
 
 ### Refactored
 - Shared `getGlobIgnorePatterns()` and `isExcludedPath()` between `findAllFiles()` and `resolveTargetPaths()` so both paths use the same exclusion logic.
