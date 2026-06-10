@@ -1533,10 +1533,7 @@ class AISlopDetector {
     console.log(`Style / Taste (Soul)        : ${score.style} pts`);
     console.log(`TOTAL KARPE-SLOP SCORE      : ${score.total} pts`);
 
-    if (this.issues.length === 0) {
-      console.log(`\nCLEAN. Even Andrej would approve.`);
-      console.log(`   "This codebase has taste." — @karpathy, probably`);
-    } else if (hasOnlyFreshPackageWarnings(this.issues)) {
+    if (hasOnlyFreshPackageWarnings(this.issues)) {
       console.log(`\nPackage freshness warnings only. Not counted in the KarpeSlop score.`);
     } else if (score.total > 50) {
       console.log(`\nSUEEEY! Here piggy piggy... this codebase is 100% slop-fed.`);
