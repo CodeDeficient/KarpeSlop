@@ -78,8 +78,8 @@ npx karpeslop@latest --version
 
 ### Exit Codes
 
-- `0`: No issues found
-- `1`: Issues found (warnings)
+- `0`: No issues found, or only `fresh_package_version` warnings were found
+- `1`: Blocking issues found (warnings other than `fresh_package_version`)
 - `2`: Critical issues found (with `--strict` flag) — blocks CI
 
 ### The Three Axes of AI Slop

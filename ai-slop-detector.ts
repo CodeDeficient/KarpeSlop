@@ -14,6 +14,9 @@ import path from 'path';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
 
+const globSync = glob.sync;
+const globEscape = glob.escape;
+
 interface SlopScoreBreakdown {
   informationUtility: number;
   informationQuality: number;
@@ -68,11 +71,99 @@ interface KarpeSlopConfig {
   ignorePaths?: string[];
   severityOverrides?: Record<string, 'critical' | 'high' | 'medium' | 'low'>;
   blockOnCritical?: boolean;
+  minPackageAgeDays?: number;
+}
+
+/**
+ * Parse a semver string into the concrete version and whether the original
+ * was a floating caret/tilde range.
+ *
+ * We intentionally only treat `^` and `~` as eligible for the package-age
+ * check because those are the common semver ranges that drift on install.
+ * Broader operators like `>=`, `1.x`, or `latest` are not resolved here.
+ */
+export function parseVersionRange(version: string): { actualVersion: string; isRange: boolean } {
+  if (version.startsWith('^') || version.startsWith('~')) {
+    return { actualVersion: version.slice(1), isRange: true };
+  }
+  return { actualVersion: version, isRange: false };
+}
+
+/**
+ * Run an array of async tasks with bounded concurrency. Used to throttle
+ * outbound HTTP calls to the npm registry (which rate-limits unauthenticated
+ * callers at ~600 req/min).
+ */
+async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number, shouldStop?: () => boolean): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+    while (true) {
+      if (shouldStop?.()) return;
+      const i = next++;
+      if (i >= tasks.length) return;
+      results[i] = await tasks[i]();
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+export function shouldAnalyzePathInQuietMode(filePath: string, rootDir: string, coreAppDirs: readonly string[]): boolean {
+  const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
+  const base = path.basename(filePath);
+  if (base === 'package.json' || base === 'package-lock.json') {
+    return true;
+  }
+  return coreAppDirs.some(dir => relativePath.startsWith(dir));
+}
+
+export function isRegistryBackedLockfileEntry(pkgPath: string): boolean {
+  return pkgPath.includes('node_modules/');
+}
+
+export function hasOnlyFreshPackageWarnings(
+  issues: ReadonlyArray<Pick<AISlopIssue, 'type'>>
+): boolean {
+  return issues.length > 0 && issues.every(issue => issue.type === 'fresh_package_version');
+}
+
+/**
+ * Determine whether a file path should be excluded from analysis.
+ *
+ * Segment-based matching means any file under e.g. `src/dist/` is still excluded
+ * because `dist` exists as a segment. Matching `dist` everywhere is the simpler,
+ * reliable choice for a build-artifact filter.
+ */
+export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRoot: boolean = false): boolean {
+  const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
+  const isOutsideRoot = relativePath.startsWith('..');
+  const pathToMatch = allowOutsideRoot && isOutsideRoot
+    ? path.resolve(filePath).replace(/\\/g, '/')
+    : relativePath;
+
+  const segments = pathToMatch.split('/');
+  const excludedSegment = (name: string) => segments.includes(name);
+  return excludedSegment('generated') ||
+    excludedSegment('coverage') ||
+    excludedSegment('.next') ||
+    excludedSegment('node_modules') ||
+    excludedSegment('dist') ||
+    excludedSegment('build') ||
+    excludedSegment('.git') ||
+    excludedSegment('out') ||
+    excludedSegment('temp') ||
+    excludedSegment('types') ||
+    segments.some(segment => segment.startsWith('.')) ||
+    pathToMatch.endsWith('.d.ts') ||
+    (!isOutsideRoot && (pathToMatch.endsWith('ai-slop-detector.ts') ||
+      pathToMatch.endsWith('improved-ai-slop-detector.ts')));
 }
 
 class AISlopDetector {
   private issues: AISlopIssue[] = [];
   private targetExtensions = ['.ts', '.tsx', '.js', '.jsx'];
+  private manifestFilenames = ['package.json', 'package-lock.json'];
 
   // Core application directories to prioritize in reporting
   private coreAppDirs = ['app/', 'components/', 'lib/', 'hooks/', 'services/'];
@@ -306,9 +397,19 @@ class AISlopDetector {
 
   private config: KarpeSlopConfig = {};
   private customIgnorePaths: string[] = [];
+  private npmPackageCache: Map<string, Record<string, string>> = new Map();
+  private registryWarningLogged = false;
+  private registryUnavailable = false;
+  private reportedFreshPackageKeys = new Set<string>();
+  private targetPaths: string[] = [];
 
-  constructor(private rootDir: string) {
+  constructor(private rootDir: string, targetPaths?: string[]) {
     this.loadConfig();
+    if (targetPaths && targetPaths.length > 0) {
+      this.targetPaths = targetPaths.map(p =>
+        path.isAbsolute(p) ? p : path.resolve(this.rootDir, p)
+      );
+    }
   }
 
   /**
@@ -372,6 +473,14 @@ class AISlopDetector {
         if (typeof cfg.ignorePaths[i] !== 'string') {
           throw new Error(`ignorePaths[${i}] must be a string`);
         }
+      }
+    }
+
+    // Validate minPackageAgeDays
+    if (cfg.minPackageAgeDays !== undefined) {
+      const v = cfg.minPackageAgeDays;
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+        throw new Error('minPackageAgeDays must be a finite non-negative number');
       }
     }
 
@@ -443,22 +552,30 @@ class AISlopDetector {
   async detect(quiet: boolean = false) {
     console.log('🔍 Starting AI Slop detection...\n');
 
-    // 1. Find all TypeScript/JavaScript files
-    const allFiles = this.findAllFiles();
+    let filesToAnalyze: string[];
 
-    // Filter files based on quiet mode (skip non-core files if quiet is true)
-    const filesToAnalyze = quiet
-      ? allFiles.filter(file => {
-        const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-        return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
-      })
-      : allFiles;
+    if (this.targetPaths.length > 0) {
+      const resolvedTargetFiles = this.resolveTargetPaths();
+      if (resolvedTargetFiles.length === 0) {
+        throw new Error('No valid target files found for the supplied paths');
+      }
+      filesToAnalyze = quiet
+        ? resolvedTargetFiles.filter(file => this.shouldAnalyzeInQuietMode(file))
+        : resolvedTargetFiles;
+      console.log(`🎯 Targeting ${filesToAnalyze.length} file(s) (explicit paths)\n`);
+    } else {
+      const allFiles = this.findAllFiles();
 
-    console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
+      filesToAnalyze = quiet
+        ? allFiles.filter(file => this.shouldAnalyzeInQuietMode(file))
+        : allFiles;
+
+      console.log(`📁 Found ${allFiles.length} files to analyze (${filesToAnalyze.length} in ${quiet ? 'quiet' : 'full'} mode)\n`);
+    }
 
     // 2. Analyze each file for AI Slop patterns
     for (const file of filesToAnalyze) {
-      this.analyzeFile(file, quiet);
+      await this.analyzeFile(file, quiet);
     }
 
     // 3. Report findings
@@ -467,59 +584,129 @@ class AISlopDetector {
     return this.issues;
   }
 
+  private getGlobIgnorePatterns(): string[] {
+    return [
+      'node_modules/**',
+      '.next/**',
+      'dist/**',
+      'build/**',
+      'coverage/**',
+      'generated/**',
+      '.vercel/**',
+      '.git/**',
+      '**/types/**',
+      '**/node_modules/**',
+      '**/.*',
+      '**/*.d.ts',
+      '**/coverage/**',
+      '**/out/**',
+      '**/temp/**',
+      'scripts/ai-slop-detector.ts',
+      'ai-slop-detector.ts',
+      'improved-ai-slop-detector.ts',
+      ...this.customIgnorePaths
+    ];
+  }
+
+  private shouldAnalyzeInQuietMode(filePath: string): boolean {
+    return shouldAnalyzePathInQuietMode(filePath, this.rootDir, this.coreAppDirs);
+  }
+
+  private isIgnoredByConfig(filePath: string): boolean {
+    const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
+    if (relativePath.startsWith('..')) {
+      return false;
+    }
+
+    return globSync(globEscape(relativePath), {
+      cwd: this.rootDir,
+      ignore: this.getGlobIgnorePatterns()
+    }).length === 0;
+  }
+
   /**
-   * Find all TypeScript/JavaScript files in the project
+   * Find all TypeScript/JavaScript files in the project, plus manifest files
    */
   private findAllFiles(): string[] {
     const allFiles: string[] = [];
 
     for (const ext of this.targetExtensions) {
       const pattern = path.join(this.rootDir, `**/*${ext}`).replace(/\\/g, '/');
-      const files = glob.sync(pattern, {
-        ignore: [
-          'node_modules/**',
-          '.next/**',
-          'dist/**',
-          'build/**',
-          'coverage/**',
-          'generated/**',  // Prisma generated files
-          '.vercel/**',    // Vercel build files
-          '.git/**',       // Git files
-          '**/types/**',   // Exclude type definition files
-          '**/node_modules/**',
-          '**/.*',        // Hidden directories like .git (but not .tsx files)
-          '**/*.d.ts',     // Don't scan declaration files
-          '**/coverage/**', // Coverage reports
-          '**/out/**',     // Next.js output directory
-          '**/temp/**',    // Temporary files
-          'scripts/ai-slop-detector.ts',  // Exclude the detector script itself to avoid false positives
-          'ai-slop-detector.ts',  // Also exclude when in root directory
-          'improved-ai-slop-detector.ts',  // Exclude the improved detector script to avoid false positives
-          ...this.customIgnorePaths
-        ]
-      });
-
-      // Additional filtering to remove any generated files that may have slipped through
-      const filteredFiles = files.filter(file => {
-        const relativePath = path.relative(this.rootDir, file).replace(/\\/g, '/');
-        return !relativePath.includes('generated/') &&
-          !relativePath.includes('/generated') &&
-          !relativePath.startsWith('generated/') &&
-          !relativePath.includes('coverage/') &&
-          !relativePath.includes('.next/') &&
-          !relativePath.includes('node_modules/') &&
-          !relativePath.includes('dist/') &&
-          !relativePath.includes('build/') &&
-          !relativePath.includes('.git/') &&
-          !relativePath.includes('out/') &&
-          !relativePath.includes('temp/');
-      });
-
+      const files = globSync(pattern, { ignore: this.getGlobIgnorePatterns() });
+      const filteredFiles = files.filter(file => !isExcludedPath(file, this.rootDir));
       allFiles.push(...filteredFiles);
+    }
+
+    // Also pick up manifest files at the project root and below it for
+    // package-age analysis in monorepos/workspaces.
+    for (const name of this.manifestFilenames) {
+      const rootManifestPath = path.join(this.rootDir, name);
+      const nestedPattern = path.join(this.rootDir, '**', name).replace(/\\/g, '/');
+      const manifestFiles = [
+        ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir)
+          ? [rootManifestPath]
+          : []),
+        ...globSync(nestedPattern, { ignore: this.getGlobIgnorePatterns() })
+      ].filter(file => !isExcludedPath(file, this.rootDir));
+      allFiles.push(...manifestFiles);
     }
 
     // Remove duplicates and return
     return [...new Set(allFiles)];
+  }
+
+  /**
+   * Resolve target paths (files and directories) passed via CLI
+   * Expands directories into their scannable files, validates files exist and have correct extensions
+   */
+  private resolveTargetPaths(): string[] {
+    const resolved: string[] = [];
+
+    for (const targetPath of this.targetPaths) {
+      if (!fs.existsSync(targetPath)) {
+        console.warn(`⚠️  Target path does not exist, skipping: ${targetPath}`);
+        continue;
+      }
+
+      const stat = fs.statSync(targetPath);
+
+      if (stat.isFile()) {
+        const ext = path.extname(targetPath);
+        const base = path.basename(targetPath);
+        const isManifest = ext === '.json' && this.manifestFilenames.includes(base);
+        if (this.isIgnoredByConfig(targetPath)) {
+          console.warn(`⚠️  Target file matches ignore paths, skipping: ${targetPath}`);
+        } else if (isExcludedPath(targetPath, this.rootDir, true)) {
+          console.warn(`⚠️  Target file is in an excluded path, skipping: ${targetPath}`);
+        } else if (this.targetExtensions.includes(ext) || isManifest) {
+          resolved.push(targetPath);
+        } else {
+          console.warn(`⚠️  Target file has unsupported extension (${ext}), skipping: ${targetPath}`);
+        }
+      } else if (stat.isDirectory()) {
+        for (const ext of this.targetExtensions) {
+          const pattern = path.join(targetPath, `**/*${ext}`).replace(/\\/g, '/');
+          const files = globSync(pattern, { ignore: this.getGlobIgnorePatterns() });
+          const filteredFiles = files.filter(file => !isExcludedPath(file, this.rootDir, true));
+          resolved.push(...filteredFiles);
+        }
+        for (const manifestName of this.manifestFilenames) {
+          // Pick up manifests both at the directory root and below it so the
+          // fresh_package_version rule still fires in monorepos/workspaces.
+          const rootManifestPath = path.join(targetPath, manifestName);
+          const nestedPattern = path.join(targetPath, '**', manifestName).replace(/\\/g, '/');
+          const manifestFiles = [
+            ...(fs.existsSync(rootManifestPath) && !this.isIgnoredByConfig(rootManifestPath) && !isExcludedPath(rootManifestPath, this.rootDir, true)
+              ? [rootManifestPath]
+              : []),
+            ...globSync(nestedPattern, { ignore: this.getGlobIgnorePatterns() })
+          ].filter(file => !isExcludedPath(file, this.rootDir, true));
+          resolved.push(...manifestFiles);
+        }
+      }
+    }
+
+    return [...new Set(resolved)];
   }
 
   /**
@@ -629,7 +816,7 @@ class AISlopDetector {
   /**
    * Analyze a single file for AI Slop patterns
    */
-  private analyzeFile(filePath: string, quiet: boolean = false) {
+  private async analyzeFile(filePath: string, quiet: boolean = false) {
     const content = fs.readFileSync(filePath, 'utf-8');
     const lines = content.split('\n');
 
@@ -853,6 +1040,11 @@ class AISlopDetector {
       this.analyzeComplexNestedConditionals(filePath, lines, i, lineNumber, line);
 
     }
+
+    // Special handling for package.json and package-lock.json to detect fresh package versions
+    if (path.basename(filePath) === 'package.json' || path.basename(filePath) === 'package-lock.json') {
+      await this.analyzePackageVersions(filePath, content);
+    }
   }
 
   /**
@@ -994,6 +1186,197 @@ class AISlopDetector {
     }
 
     return inCatchBlock;
+  }
+
+  /**
+   * Analyze package.json or package-lock.json for fresh (unstable) package versions
+   * Flags packages updated less than minPackageAgeDays ago (default 7)
+   */
+  private async analyzePackageVersions(filePath: string, content: string): Promise<void> {
+    const minAgeDays = this.config.minPackageAgeDays ?? 7;
+    const minAgeMs = minAgeDays * 24 * 60 * 60 * 1000;
+
+    const packageEntries: Array<{ scopeKey: string; sourceId: string; pkgName: string; version: string }> = [];
+    const lockfileRoot = path.dirname(filePath);
+    const normalizePath = (input: string) => input.replace(/\\/g, '/');
+    const lockfileScopeKey = (pkgPath: string): string => {
+      const normalizedPkgPath = normalizePath(pkgPath);
+      const nodeModulesIndex = normalizedPkgPath.lastIndexOf('/node_modules/');
+      const scopeRelative = nodeModulesIndex !== -1
+        ? normalizedPkgPath.slice(0, nodeModulesIndex)
+        : normalizedPkgPath.startsWith('node_modules/')
+          ? ''
+          : normalizedPkgPath;
+
+      return normalizePath(path.resolve(lockfileRoot, scopeRelative || '.'));
+    };
+    const collectLegacyLockfileEntries = (dependencies: unknown, trail: string[] = []): void => {
+      if (typeof dependencies !== 'object' || dependencies === null) {
+        return;
+      }
+
+      for (const [depName, depInfo] of Object.entries(dependencies as Record<string, unknown>)) {
+        if (typeof depInfo !== 'object' || depInfo === null) {
+          continue;
+        }
+
+        const info = depInfo as Record<string, unknown>;
+        const version = typeof info.version === 'string' ? info.version : '';
+        const pkgName = typeof info.name === 'string' && info.name ? info.name : depName;
+        const scopeKey = normalizePath(lockfileRoot);
+        const sourceId = ['dependencies', ...trail, depName].join('/');
+
+        if (pkgName && version) {
+          packageEntries.push({ scopeKey, sourceId, pkgName, version });
+        }
+
+        if (info.dependencies && typeof info.dependencies === 'object') {
+          collectLegacyLockfileEntries(info.dependencies, [...trail, depName]);
+        }
+      }
+    };
+
+    try {
+      const pkg = JSON.parse(content);
+
+      if (filePath.endsWith('package-lock.json')) {
+        if (pkg.packages) {
+          for (const [pkgPath, pkgInfo] of Object.entries(pkg.packages)) {
+            if (pkgPath === '' || pkgPath === 'node_modules/') continue;
+            // Workspace entries like `packages/ui` are local packages, not
+            // registry-installed dependencies, so they should not be checked
+            // for package freshness.
+            if (!isRegistryBackedLockfileEntry(pkgPath)) continue;
+            if (pkgInfo === null || pkgInfo === undefined) continue;
+            const info = pkgInfo as Record<string, unknown>;
+            const version = info.version as string;
+            const pkgName = typeof info.name === 'string' && info.name
+              ? info.name
+              : pkgPath.split('node_modules/').pop() || pkgPath;
+            if (pkgName && version) {
+              packageEntries.push({ scopeKey: lockfileScopeKey(pkgPath), sourceId: pkgPath, pkgName, version });
+            }
+          }
+        } else if (pkg.dependencies) {
+          collectLegacyLockfileEntries(pkg.dependencies);
+        }
+      } else if (typeof pkg === 'object' && pkg !== null) {
+        const packageJsonScopeKey = normalizePath(path.dirname(filePath));
+        const p = pkg as Record<string, Record<string, string> | undefined>;
+        for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+          if (p[key]) {
+            for (const [pkgName, version] of Object.entries(p[key]!)) {
+              packageEntries.push({ scopeKey: packageJsonScopeKey, sourceId: key, pkgName, version });
+            }
+          }
+        }
+      }
+    } catch {
+      return;
+    }
+
+    const entries = packageEntries
+      .map(({ scopeKey, sourceId, pkgName, version }) => ({ scopeKey, sourceId, pkgName, ...parseVersionRange(version) }))
+      // Keep the rule narrow on purpose: only caret/tilde ranges are treated
+      // as "fresh package" candidates in package.json. package-lock.json is
+      // always checked because it contains the resolved version.
+      .filter(({ isRange }) => isRange || filePath.endsWith('package-lock.json'));
+
+    // Bound concurrency: npm registry rate-limits unauthenticated callers at
+    // ~600 req/min, and a typical package-lock.json has 200-1000 deps.
+    const NPM_CONCURRENCY = 5;
+    const ageInfos = await pLimit(
+      entries.map(({ scopeKey, sourceId, pkgName, actualVersion }) => () =>
+        this.getNpmPackageAge(pkgName, actualVersion)
+          .then(ageInfo => ({ scopeKey, sourceId, pkgName, version: actualVersion, ageInfo }))
+      ),
+      NPM_CONCURRENCY,
+      () => this.registryUnavailable
+    );
+
+    for (const ageInfoResult of ageInfos) {
+      if (!ageInfoResult) {
+        continue;
+      }
+
+      const { scopeKey, sourceId, pkgName, version, ageInfo } = ageInfoResult;
+      if (ageInfo && ageInfo.ageMs < minAgeMs) {
+        const issueKey = `${scopeKey}|${pkgName}|${version}`;
+        if (this.reportedFreshPackageKeys.has(issueKey)) {
+          continue;
+        }
+        this.reportedFreshPackageKeys.add(issueKey);
+        const daysOld = Math.floor(ageInfo.ageMs / (24 * 60 * 60 * 1000));
+        this.issues.push({
+          type: 'fresh_package_version',
+          file: filePath,
+          line: 1,
+          column: 1,
+          code: filePath.endsWith('package-lock.json')
+            ? `${sourceId}: ${pkgName}@${version}`
+            : `"${pkgName}": "${version}"`,
+          message: filePath.endsWith('package-lock.json')
+            ? `Package '${pkgName}' from ${sourceId} v${version} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`
+            : `Package '${pkgName}' v${version} is only ${daysOld} day${daysOld === 1 ? '' : 's'} old — wait at least ${minAgeDays} days before updating`,
+          severity: 'medium'
+        });
+      }
+    }
+  }
+
+  /**
+   * Get npm package version age info with caching.
+   * Cache stores the full `time` map from the registry so repeated lookups
+   * for different versions of the same package don't re-fetch the package.
+   */
+  private async getNpmPackageAge(pkgName: string, version: string): Promise<{ version: string; time: string; ageMs: number } | null> {
+    const now = Date.now();
+
+    const cached = this.npmPackageCache.get(pkgName);
+    if (cached) {
+      // Cached map contains every version the registry knows about. If our
+      // requested version isn't here, the version genuinely doesn't exist
+      // (or was unpublished) — don't refetch, that would just re-fetch the
+      // same map we already have.
+      const versionTime = cached[version];
+      if (!versionTime) return null;
+      const publishTime = new Date(versionTime).getTime();
+      return { version, time: versionTime, ageMs: now - publishTime };
+    }
+
+    if (this.registryUnavailable) {
+      return null;
+    }
+
+    let data: { time: Record<string, string> } | null = null;
+    try {
+      const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      let response: Response;
+      try {
+        response = await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!response.ok) return null;
+      data = (await response.json()) as { time: Record<string, string> };
+    } catch {
+      if (!this.registryWarningLogged) {
+        console.warn('⚠️  Could not reach npm registry to check package ages. fresh_package_version checks will be skipped.');
+        this.registryWarningLogged = true;
+      }
+      this.registryUnavailable = true;
+      return null;
+    }
+
+    if (data?.time) {
+      this.npmPackageCache.set(pkgName, data.time);
+    }
+    const versionTime = data?.time?.[version];
+    if (!versionTime) return null;
+    const publishTime = new Date(versionTime).getTime();
+    return { version, time: versionTime, ageMs: now - publishTime };
   }
 
   /**
@@ -1150,9 +1533,8 @@ class AISlopDetector {
     console.log(`Style / Taste (Soul)        : ${score.style} pts`);
     console.log(`TOTAL KARPE-SLOP SCORE      : ${score.total} pts`);
 
-    if (score.total === 0) {
-      console.log(`\nCLEAN. Even Andrej would approve.`);
-      console.log(`   "This codebase has taste." — @karpathy, probably`);
+    if (hasOnlyFreshPackageWarnings(this.issues)) {
+      console.log(`\nPackage freshness warnings only. Not counted in the KarpeSlop score.`);
     } else if (score.total > 50) {
       console.log(`\nSUEEEY! Here piggy piggy... this codebase is 100% slop-fed.`);
     } else {
@@ -1321,6 +1703,10 @@ class AISlopDetector {
     let utility = 0, quality = 0, style = 0;
 
     for (const i of this.issues) {
+      // Package freshness is tracked separately from AI slop scoring.
+      if (i.type === 'fresh_package_version') {
+        continue;
+      }
       const w = weights[i.type] || 3;
       if (i.type.includes('hallucinated') || i.type.includes('todo') || i.type.includes('assumption')) quality += w;
       else if (i.type.includes('comment') || i.type.includes('redundant') || i.type.includes('boilerplate')) utility += w;
@@ -1334,34 +1720,51 @@ class AISlopDetector {
 }
 
 // Run the detector if this script is executed directly
+export function splitCliArgs(args: readonly string[]): { flagArgs: string[]; targetPaths: string[] } {
+  // Support -- separator: everything after -- is treated as a path, even if it starts with -
+  const doubleDashIdx = args.indexOf('--');
+  if (doubleDashIdx !== -1) {
+    return { flagArgs: args.slice(0, doubleDashIdx), targetPaths: args.slice(doubleDashIdx + 1) };
+  }
+  return { flagArgs: args.filter(a => a.startsWith('-')), targetPaths: args.filter(a => !a.startsWith('-')) };
+}
+
 async function runIfMain() {
   const rootDir = process.cwd();
-  const detector = new AISlopDetector(rootDir);
 
-  // Parse command line arguments
   const args = process.argv.slice(2);
+  const { flagArgs, targetPaths } = splitCliArgs(args);
 
-  // Check for help options first
-  if (args.includes('--help') || args.includes('-h') || args.includes('/?')) {
+  // Check for help options first, before constructing the detector
+  // (so a bad config doesn't break --help)
+  if (flagArgs.includes('--help') || flagArgs.includes('-h') || flagArgs.includes('/?')) {
     console.log(`
-Usage: karpeslop [options]
+Usage: karpeslop [options] [path...]
+
+Arguments:
+  path...         File or directory path(s) to scan (scans all files if omitted)
 
 Options:
   --help, -h     Show this help message
   --quiet, -q    Run in quiet mode (only scan core app files)
   --strict, -s   Exit with code 2 if critical issues (hallucinations) are found
   --version, -v  Show version information
+  --             End of flags; treat remaining args as paths (even if they start with -)
 
 Exit Codes:
-  0 - No issues found
-  1 - Issues found (warnings/errors)
+  0 - No issues found, or only fresh package warnings were found
+  1 - Blocking issues found (warnings/errors other than fresh package warnings)
   2 - Critical issues found (--strict mode only)
 
 Examples:
-  karpeslop                    # Scan all files in current directory
-  karpeslop --quiet            # Scan only core application files
-  karpeslop --strict           # Block on critical issues (hallucinations)
-  karpeslop --help             # Show this help
+  karpeslop                          # Scan all files in current directory
+  karpeslop src/app.ts               # Scan a single file
+  karpeslop src/lib/                 # Scan a directory
+  karpeslop src/app.ts src/lib/      # Scan specific paths
+  karpeslop --quiet                  # Scan only core application files
+  karpeslop --strict src/app.ts      # Block on critical issues in a specific file
+  karpeslop -- -dash-file.ts         # Scan a file whose name starts with -
+  karpeslop --help                   # Show this help
 
 The tool detects the three axes of AI slop:
   1. Information Utility (Noise) - Comments, boilerplate, etc.
@@ -1372,7 +1775,7 @@ The tool detects the three axes of AI slop:
   }
 
   // Check for version options
-  if (args.includes('--version') || args.includes('-v')) {
+  if (flagArgs.includes('--version') || flagArgs.includes('-v')) {
     // Try to get version from package.json
     try {
       const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
@@ -1384,8 +1787,9 @@ The tool detects the three axes of AI slop:
     process.exit(0);
   }
 
-    const quiet = args.includes('--quiet') || args.includes('-q');
-    const strict = args.includes('--strict') || args.includes('-s') || !!detector.getConfig().blockOnCritical;
+  const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
+  const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
+  const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || !!detector.getConfig().blockOnCritical;
 
   try {
     const issues = await detector.detect(quiet);
@@ -1396,11 +1800,16 @@ The tool detects the three axes of AI slop:
     // In strict mode, exit with code 2 if there are any critical issues (hallucinations)
     const criticalIssues = issues.filter(i => i.severity === 'critical');
     if (strict && criticalIssues.length > 0) {
-      console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found. Blocking.`);
+      if (targetPaths.length > 0) {
+        const criticalFiles = [...new Set(criticalIssues.map(i => path.relative(rootDir, i.file)))];
+        console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found in: ${criticalFiles.join(', ')}`);
+      } else {
+        console.log(`\n❌ STRICT MODE: ${criticalIssues.length} CRITICAL issue(s) found. Blocking.`);
+      }
       process.exit(2);
     }
 
-    const exitCode = issues.length > 0 ? 1 : 0;
+    const exitCode = hasOnlyFreshPackageWarnings(issues) ? 0 : issues.length > 0 ? 1 : 0;
     process.exit(exitCode);
   } catch (error) {
     console.error('💥 AI Slop detection failed:', error);
@@ -1408,12 +1817,12 @@ The tool detects the three axes of AI slop:
   }
 }
 
-// Execute as CLI tool - this file is designed to be run as a command-line tool
-// The complex main module check has caused issues with npm wrapper scripts
-// Since this is a CLI tool (not a module to be imported), just run when executed
-runIfMain().catch(error => {
-  console.error('💥 AI Slop detection failed:', error);
-  process.exit(1);
-});
+// Execute only when run as the main module, not when imported by tests.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  runIfMain().catch(error => {
+    console.error('💥 AI Slop detection failed:', error);
+    process.exit(1);
+  });
+}
 
 export { AISlopDetector, AISlopIssue, ConsolidatedIssue, DetectionPattern };

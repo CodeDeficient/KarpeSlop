@@ -1,5 +1,6 @@
 node_modules/
 dist/
+karpeslop-bin.js
 .npmignore
 .ai-slop-report.json
 .DS_Store
