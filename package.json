@@ -1,23 +1,23 @@
 {
   "name": "karpeslop",
-  "version": "1.0.20",
+  "version": "1.0.25",
   "description": "The linter Andrej Karpathy wishes existed. Detects the three axes of AI slop with extreme prejudice.",
   "type": "module",
   "bin": {
-    "karpeslop": "karpeslop-bin.js"
+    "karpeslop": "karpeslop-cli.js"
   },
   "scripts": {
     "build": "babel ai-slop-detector.ts --out-file karpeslop-bin.js --extensions \".ts,.tsx\"",
+    "test": "node --import tsx --test tests/*.test.ts",
     "slop": "tsx ai-slop-detector.ts",
     "slop:quiet": "tsx ai-slop-detector.ts --quiet",
     "slop:report": "tsx ai-slop-detector.ts && cat ai-slop-report.json"
   },
   "files": [
-    "karpeslop-bin.js",
     "ai-slop-detector.ts",
     "karpeslop-cli.js",
-    "karpeslop.js",
     "README.md",
+    "CHANGELOG.md",
     "package.json",
     "LICENSE"
   ],
