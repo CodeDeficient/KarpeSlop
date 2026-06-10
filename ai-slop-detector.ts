@@ -106,6 +106,25 @@ async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number, shoul
   return results;
 }
 
+export function shouldAnalyzePathInQuietMode(filePath: string, rootDir: string, coreAppDirs: readonly string[]): boolean {
+  const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
+  const base = path.basename(filePath);
+  if (base === 'package.json' || base === 'package-lock.json') {
+    return true;
+  }
+  return coreAppDirs.some(dir => relativePath.startsWith(dir));
+}
+
+export function isRegistryBackedLockfileEntry(pkgPath: string): boolean {
+  return pkgPath.includes('node_modules/');
+}
+
+export function hasOnlyFreshPackageWarnings(
+  issues: ReadonlyArray<Pick<AISlopIssue, 'type'>>
+): boolean {
+  return issues.length > 0 && issues.every(issue => issue.type === 'fresh_package_version');
+}
+
 class AISlopDetector {
   private issues: AISlopIssue[] = [];
   private targetExtensions = ['.ts', '.tsx', '.js', '.jsx'];
@@ -555,12 +574,7 @@ class AISlopDetector {
   }
 
   private shouldAnalyzeInQuietMode(filePath: string): boolean {
-    const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
-    const base = path.basename(filePath);
-    if (base === 'package.json' || base === 'package-lock.json') {
-      return true;
-    }
-    return this.coreAppDirs.some(dir => relativePath.startsWith(dir));
+    return shouldAnalyzePathInQuietMode(filePath, this.rootDir, this.coreAppDirs);
   }
 
   private isIgnoredByConfig(filePath: string): boolean {
@@ -1225,7 +1239,7 @@ class AISlopDetector {
             // Workspace entries like `packages/ui` are local packages, not
             // registry-installed dependencies, so they should not be checked
             // for package freshness.
-            if (!pkgPath.includes('node_modules/')) continue;
+            if (!isRegistryBackedLockfileEntry(pkgPath)) continue;
             const info = pkgInfo as Record<string, unknown>;
             const version = info.version as string;
             const pkgName = typeof info.name === 'string' && info.name
@@ -1514,7 +1528,7 @@ class AISlopDetector {
     if (this.issues.length === 0) {
       console.log(`\nCLEAN. Even Andrej would approve.`);
       console.log(`   "This codebase has taste." — @karpathy, probably`);
-    } else if (this.issues.every(issue => issue.type === 'fresh_package_version')) {
+    } else if (hasOnlyFreshPackageWarnings(this.issues)) {
       console.log(`\nPackage freshness warnings only. Not counted in the KarpeSlop score.`);
     } else if (score.total > 50) {
       console.log(`\nSUEEEY! Here piggy piggy... this codebase is 100% slop-fed.`);
@@ -1801,12 +1815,12 @@ The tool detects the three axes of AI slop:
   }
 }
 
-// Execute as CLI tool - this file is designed to be run as a command-line tool
-// The complex main module check has caused issues with npm wrapper scripts
-// Since this is a CLI tool (not a module to be imported), just run when executed
-runIfMain().catch(error => {
-  console.error('💥 AI Slop detection failed:', error);
-  process.exit(1);
-});
+// Execute only when run as the main module, not when imported by tests.
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  runIfMain().catch(error => {
+    console.error('💥 AI Slop detection failed:', error);
+    process.exit(1);
+  });
+}
 
 export { AISlopDetector, AISlopIssue, ConsolidatedIssue, DetectionPattern };
