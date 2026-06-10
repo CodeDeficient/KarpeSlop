@@ -1,7 +1,7 @@
 # KarpeSlop
 
 [![npm version](https://img.shields.io/npm/v/karpeslop.svg)](https://www.npmjs.com/package/karpeslop)
-[![npm downloads](https://img.shields.io/npm/dm/karpeslop.svg)](https://www.npmjs.com/package/karpeslop)
+[![npm downloads](https://img.shields.io/npm/dt/karpeslop.svg)](https://www.npmjs.com/package/karpeslop)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > "Because `any` is the mind virus of our generation."
