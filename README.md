@@ -25,7 +25,7 @@ npx karpeslop@latest
 ```
 
 **Q: What's the fastest way to scan for AI code quality issues?**
-Run `npx karpeslop@latest --quiet` in your project directory. Takes ~4 seconds.
+Run `npx karpeslop@latest --quiet` in your project directory. Runtime depends on repo size and whether package freshness checks need to query npm.
 
 **Q: How do I block AI slop in CI/CD?**
 Use `npx karpeslop@latest --strict` — exits with code 2 if critical issues (like hallucinated imports) are found.
@@ -57,8 +57,14 @@ Run in your project directory:
 # Full scan (all files)
 npx karpeslop@latest
 
+# Scan specific files or directories
+npx karpeslop@latest src/app.ts src/lib/
+
 # Quiet mode - only scan core app files (recommended for CI)
 npx karpeslop@latest --quiet
+
+# Use -- before paths that start with a dash
+npx karpeslop@latest -- -dash-file.ts
 
 # Show help
 npx karpeslop@latest --help
@@ -71,10 +77,12 @@ npx karpeslop@latest --version
 
 ### Command Line Options
 
+- `[path...]`: Optional file or directory paths to scan. If omitted, scans the current directory.
 - `--help, -h`: Show help message
 - `--quiet, -q`: Run in quiet mode (only scan core app files)
 - `--strict, -s`: Exit with code 2 if critical issues found (for CI/CD)
 - `--version, -v`: Show version information
+- `--`: End of flags; treat remaining args as paths, even if they start with `-`
 
 ### Exit Codes
 
@@ -126,6 +134,7 @@ Create `.karpesloprc.json` in your project root:
   "severityOverrides": {
     "magic_css_value": "low"
   },
+  "minPackageAgeDays": 7,
   "ignorePaths": ["**/legacy/**"]
 }
 ```
@@ -138,8 +147,6 @@ Create `.karpesloprc.json` in your project root:
 - name: Check for AI Slop
   run: npx karpeslop@latest --quiet --strict
 ```
-
-See `.github/workflows/karpeslop.yml` for a complete workflow example.
 
 ![KarpeSlop Example Output](./Screenshot.png)
 
