@@ -3,6 +3,7 @@
   "version": "1.0.26",
   "description": "The linter Andrej Karpathy wishes existed. Detects the three axes of AI slop with extreme prejudice.",
   "type": "module",
+  "packageManager": "npm@10.9.7",
   "bin": {
     "karpeslop": "karpeslop-cli.js"
   },
