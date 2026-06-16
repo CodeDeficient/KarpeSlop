@@ -2,6 +2,14 @@
 
 All notable changes will be documented in this file.
 
+## [1.0.27] - 2026-06-16
+
+### Changed
+- **Pinned all dependencies** to exact versions (no more `^`/`~` ranges)
+- **Updated all deps** to latest versions published >7 days ago: `glob` 11→13, `tsx` 4.19→4.22, Babel toolchain 7.28→7.29, `@types/node` 24→25, `typescript` 5→6
+- **Fixed transitive vulnerabilities**: `minimatch` ReDoS, `brace-expansion` process hang, `esbuild` RCE — all via scoped overrides
+- **Added `packageManager` field** to pin npm version for reproducible installs
+
 ## [1.0.26] - 2026-06-10
 
 ### Fixed
