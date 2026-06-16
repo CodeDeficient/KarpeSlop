@@ -63,7 +63,9 @@
     "typescript": "6.0.3"
   },
   "overrides": {
-    "minimatch": "3.1.4",
-    "brace-expansion": "1.1.13"
+    "@babel/cli": {
+      "minimatch": "3.1.4",
+      "brace-expansion": "1.1.13"
+    }
   }
 }
