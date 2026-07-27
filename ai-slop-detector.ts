@@ -486,6 +486,7 @@ class AISlopDetector {
       severity: 'high',
       description: 'Detects function parameters with any type'
     },
+    // AST-driven; regex is a never-match sentinel — detection is in findUnsafeAssertions
     {
       id: 'unsafe_type_assertion',
       pattern: /(?!)/,

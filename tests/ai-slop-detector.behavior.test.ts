@@ -323,6 +323,38 @@ test('findUnsafeAssertions detects chained as Foo as Bar as unsafe_double_type_a
   assert.equal(finding.severity, 'high');
 });
 
+test('findUnsafeAssertions reports 2 findings for 3-deep chain', () => {
+  const code = 'const value = input as Bar as Baz as Qux;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every(f => f.type === 'unsafe_double_type_assertion'));
+});
+
+test('findUnsafeAssertions reports 3 findings for 4-deep chain', () => {
+  const code = 'const value = input as Bar as Baz as Qux as Zap;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 3);
+  assert.ok(findings.every(f => f.type === 'unsafe_double_type_assertion'));
+});
+
+test('findUnsafeAssertions reports double and any for chained as Bar as any', () => {
+  const code = 'const value = input as Bar as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  const types = findings.map(f => f.type);
+  assert.ok(types.includes('unsafe_double_type_assertion'));
+  assert.ok(types.includes('unsafe_type_assertion'));
+
+  const anyFinding = findings.find(f => f.type === 'unsafe_type_assertion')!;
+  assert.ok(anyFinding.code.includes('as any'));
+});
+
 test('findUnsafeAssertions reports both double and any assertion for chained as unknown as any', () => {
   const code = 'const value = input as unknown as any;';
 
