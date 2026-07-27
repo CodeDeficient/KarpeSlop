@@ -181,19 +181,23 @@ export function findUnsafeAssertions(sourceText: string, fileName: string): Unsa
   const lines = sourceText.split('\n');
 
   const lineIsSuppressed = (line: number): boolean => {
-    if (line <= 1) return false;
-    const prevLine = lines[line - 2];
     const currentLine = lines[line - 1];
-    return (
-      prevLine.includes('@ts-expect-error') ||
-      prevLine.includes('@ts-ignore') ||
-      prevLine.includes('eslint-disable-next-line') ||
-      prevLine.includes('eslint-disable') ||
+    if (
       currentLine.includes('@ts-expect-error') ||
       currentLine.includes('@ts-ignore') ||
       currentLine.includes('eslint-disable-line') ||
       currentLine.includes('eslint-disable')
-    );
+    ) return true;
+    if (line > 1) {
+      const prevLine = lines[line - 2];
+      return (
+        prevLine.includes('@ts-expect-error') ||
+        prevLine.includes('@ts-ignore') ||
+        prevLine.includes('eslint-disable-next-line') ||
+        prevLine.includes('eslint-disable')
+      );
+    }
+    return false;
   };
 
   // Syntax-only (non-type-checked) detection: matches by identifier text, not
@@ -229,7 +233,7 @@ function visit(node: ts.Node) {
         return;
       }
 
-      if (ts.isAsExpression(node.expression) && node.expression.type.kind === ts.SyntaxKind.UnknownKeyword) {
+      if (ts.isAsExpression(node.expression)) {
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_double_type_assertion',
@@ -237,9 +241,9 @@ function visit(node: ts.Node) {
           line: sourceLine,
           column,
           code,
-          message: "Found unsafe double type assertion via 'as unknown as'. Use proper type guards or validation instead.",
+          message: "Found unsafe double type assertion. Use proper type guards or validation instead.",
           severity: 'high',
-          assertionForm: 'as_unknown_as',
+          assertionForm: 'chained_as',
         });
         // When the target type is also `any`, report it independently so disabling
         // unsafe_double_type_assertion doesn't silently hide the unsafe `as any`.
@@ -536,9 +540,9 @@ class AISlopDetector {
     {
       id: 'unsafe_double_type_assertion',
       pattern: /unused_ast_detected/,
-      message: "Found unsafe double type assertion via 'as unknown as'. Use proper type guards or runtime validation.",
+      message: "Found unsafe double type assertion. Use proper type guards or runtime validation.",
       severity: 'high',
-      description: 'Detects as unknown as T (AST-based)'
+      description: 'Detects chained type assertions (AST-based)'
     },
     {
       id: 'unsafe_object_assertion',

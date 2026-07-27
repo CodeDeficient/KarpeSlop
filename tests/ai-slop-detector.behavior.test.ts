@@ -293,6 +293,11 @@ test('findUnsafeAssertions does not report as any in .d.ts files', () => {
   assert.equal(findUnsafeAssertions('const x = value as any;', 'types.d.ts').length, 0);
 });
 
+test('findUnsafeAssertions suppresses as any on line 1 with eslint-disable-line', () => {
+  const code = 'const x = value as any; // eslint-disable-line';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
 test('findUnsafeAssertions detects chained as unknown as T as unsafe_double_type_assertion', () => {
   const code = 'const rows = value as unknown as EventRow[];';
 
@@ -304,6 +309,18 @@ test('findUnsafeAssertions detects chained as unknown as T as unsafe_double_type
   assert.equal(finding.line, 1);
   assert.equal(finding.severity, 'high');
   assert.ok(finding.code.includes('as unknown as'));
+});
+
+test('findUnsafeAssertions detects chained as Foo as Bar as unsafe_double_type_assertion', () => {
+  const code = 'const value = input as Foo as Bar;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  const finding = findings[0];
+  assert.equal(finding.type, 'unsafe_double_type_assertion');
+  assert.equal(finding.line, 1);
+  assert.equal(finding.severity, 'high');
 });
 
 test('findUnsafeAssertions reports both double and any assertion for chained as unknown as any', () => {
