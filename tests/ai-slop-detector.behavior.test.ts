@@ -345,6 +345,48 @@ test('severityOverrides disabling unsafe_double_type_assertion still reports uns
   }
 });
 
+test('default mode skips unsafe_type_assertion in test files', () => {
+  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-spec-'));
+  const fixtureFile = path.join(tmpDir, 'component.test.ts');
+
+  fs.writeFileSync(fixtureFile, 'const x = value as any;\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), fixtureFile],
+    { encoding: 'utf-8', cwd: process.cwd() }
+  );
+
+  try {
+    assert.ok(!result.stdout.includes('unsafe_type_assertion'),
+      `should not report as any in test files. stdout:"${result.stdout}"`);
+  } finally {
+    fs.unlinkSync(fixtureFile);
+    fs.rmdirSync(tmpDir);
+  }
+});
+
+test('default mode still reports unsafe_type_assertion in non-test files', () => {
+  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-src-'));
+  const fixtureFile = path.join(tmpDir, 'component.ts');
+
+  fs.writeFileSync(fixtureFile, 'const x = value as any;\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), fixtureFile],
+    { encoding: 'utf-8', cwd: process.cwd() }
+  );
+
+  try {
+    assert.ok(result.stdout.includes('unsafe_type_assertion'),
+      `should report as any in non-test files. stdout:"${result.stdout}"`);
+  } finally {
+    fs.unlinkSync(fixtureFile);
+    fs.rmdirSync(tmpDir);
+  }
+});
+
 test('-- separator lets paths starting with - be treated as targets, not flags', () => {
   const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-dash-'));
   const fixtureFile = path.join(tmpDir, '-my-file.ts');

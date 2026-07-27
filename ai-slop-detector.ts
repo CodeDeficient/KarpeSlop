@@ -489,7 +489,8 @@ class AISlopDetector {
       severity: 'high',
       description: 'Detects unsafe as any assertions (AST-based)',
       fix: "Use 'as unknown as TargetType' or implement a runtime type guard with validation",
-      learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates'
+      learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates',
+      skipTests: true,
     },
     {
       id: 'index_signature_any',
