@@ -149,7 +149,7 @@ Install the repository's shared hooks once after cloning:
 ./scripts/setup-git-hooks.sh
 ```
 
-The pre-push hook blocks direct pushes from `main`/`master` and blocks pushes targeting those protected branches. Use a feature branch and open a pull request instead.
+The pre-push hook blocks pushes targeting `main`/`master`. Use a feature branch and open a pull request instead. Existing hooks are never overwritten; setup stops and asks you to chain the KarpeSlop hook manually if a pre-push hook already exists.
 
 ### GitHub Actions
 
