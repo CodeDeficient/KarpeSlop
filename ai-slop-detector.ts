@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
+import ts from 'typescript';
 
 const globSync = glob.sync;
 const globEscape = glob.escape;
@@ -34,6 +35,17 @@ interface AISlopIssue {
   severity: 'critical' | 'high' | 'medium' | 'low';
 }
 
+interface UnsafeAssertionFinding {
+  type: string;
+  file: string;
+  line: number;
+  column: number;
+  code: string;
+  message: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  assertionForm: string;
+}
+
 interface ConsolidatedIssue {
   type: string;
   file: string;
@@ -47,7 +59,7 @@ interface DetectionPattern {
   id: string;
   pattern: RegExp;
   message: string;
-  severity: AISlopIssue['severity'];
+  severity: AISlopIssue['severity'] | 'off';
   description: string;
   fix?: string;           // Phase 2: How to fix this issue
   learnMore?: string;     // Phase 2: Link to documentation
@@ -69,7 +81,7 @@ interface CustomPatternConfig {
 interface KarpeSlopConfig {
   customPatterns?: CustomPatternConfig[];
   ignorePaths?: string[];
-  severityOverrides?: Record<string, 'critical' | 'high' | 'medium' | 'low'>;
+  severityOverrides?: Record<string, 'critical' | 'high' | 'medium' | 'low' | 'off'>;
   blockOnCritical?: boolean;
   minPackageAgeDays?: number;
 }
@@ -158,6 +170,98 @@ export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRo
     pathToMatch.endsWith('.d.ts') ||
     (!isOutsideRoot && (pathToMatch.endsWith('ai-slop-detector.ts') ||
       pathToMatch.endsWith('improved-ai-slop-detector.ts')));
+}
+
+export function findUnsafeAssertions(sourceText: string, fileName: string): UnsafeAssertionFinding[] {
+  if (fileName.endsWith('.d.ts')) return [];
+
+  const scriptKind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKind);
+  const findings: UnsafeAssertionFinding[] = [];
+  const lines = sourceText.split('\n');
+
+  const prevLineIsSuppressed = (line: number): boolean => {
+    if (line <= 1) return false;
+    const prevLine = lines[line - 2];
+    return (
+      prevLine.includes('@ts-expect-error') ||
+      prevLine.includes('@ts-ignore') ||
+      prevLine.includes('eslint-disable-next-line')
+    );
+  };
+
+  function isUnsafeObjectType(type: ts.TypeNode): boolean {
+  if (ts.isTypeReferenceNode(type)) {
+    const name = ts.isIdentifier(type.typeName) ? type.typeName.text : '';
+    if (name === 'Record') return true;
+  }
+  if (ts.isTypeLiteralNode(type)) return true;
+  return false;
+}
+
+function isArrayType(type: ts.TypeNode): boolean {
+  if (ts.isArrayTypeNode(type)) return true;
+  if (ts.isTypeReferenceNode(type)) {
+    const name = ts.isIdentifier(type.typeName) ? type.typeName.text : '';
+    if (name === 'Array' && type.typeArguments && type.typeArguments.length > 0) return true;
+  }
+  return false;
+}
+
+function visit(node: ts.Node) {
+    if (ts.isAsExpression(node)) {
+      const sourceLine = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+      const column = sourceFile.getLineAndCharacterOfPosition(node.getStart()).character + 1;
+
+      if (prevLineIsSuppressed(sourceLine)) {
+        ts.forEachChild(node, visit);
+        return;
+      }
+
+      if (ts.isAsExpression(node.expression) && node.expression.type.kind === ts.SyntaxKind.UnknownKeyword) {
+        const code = sourceText.slice(node.getStart(sourceFile), node.end);
+        findings.push({
+          type: 'unsafe_double_type_assertion',
+          file: fileName,
+          line: sourceLine,
+          column,
+          code,
+          message: "Found unsafe double type assertion via 'as unknown as'. Use proper type guards or validation instead.",
+          severity: 'high',
+          assertionForm: 'as_unknown_as',
+        });
+      } else if (isUnsafeObjectType(node.type)) {
+        const code = sourceText.slice(node.getStart(sourceFile), node.end);
+        findings.push({
+          type: 'unsafe_object_assertion',
+          file: fileName,
+          line: sourceLine,
+          column,
+          code,
+          message: 'Found unsafe object type assertion. Use proper type guards or runtime validation instead.',
+          severity: 'high',
+          assertionForm: 'as_object',
+        });
+      } else if (isArrayType(node.type)) {
+        const code = sourceText.slice(node.getStart(sourceFile), node.end);
+        findings.push({
+          type: 'unsafe_array_assertion',
+          file: fileName,
+          line: sourceLine,
+          column,
+          code,
+          message: 'Found unsafe array type assertion. Use proper type guards or runtime validation instead.',
+          severity: 'high',
+          assertionForm: 'as_array',
+        });
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return findings;
 }
 
 class AISlopDetector {
@@ -346,13 +450,6 @@ class AISlopDetector {
       learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates'
     },
     {
-      id: 'unsafe_double_type_assertion',
-      pattern: /as\s+\w+\s+as\s+\w+/g,
-      message: "Found unsafe double type assertion. Consider using 'as unknown as Type' for safe conversions.",
-      severity: 'high',
-      description: 'Detects unsafe double type assertions'
-    },
-    {
       id: 'index_signature_any',
       pattern: /\[\s*["'`]?(\w+)["'`]?[^\]]*\]\s*:\s*any/g,
       message: "Found index signature with 'any' type. Replace with specific type or unknown.",
@@ -392,6 +489,27 @@ class AISlopDetector {
       message: "Found potentially unsafe member access on 'any' type.",
       severity: 'high',
       description: 'Detects unsafe member access patterns'
+    },
+    {
+      id: 'unsafe_double_type_assertion',
+      pattern: /unused_ast_detected/,
+      message: "Found unsafe double type assertion via 'as unknown as'. Use proper type guards or runtime validation.",
+      severity: 'high',
+      description: 'Detects as unknown as T (AST-based)'
+    },
+    {
+      id: 'unsafe_object_assertion',
+      pattern: /unused_ast_detected/,
+      message: "Found unsafe object type assertion. Use proper type guards or runtime validation.",
+      severity: 'high',
+      description: 'Detects as Record<...> or as { ... } (AST-based)'
+    },
+    {
+      id: 'unsafe_array_assertion',
+      pattern: /unused_ast_detected/,
+      message: "Found unsafe array type assertion. Use proper type guards or runtime validation.",
+      severity: 'high',
+      description: 'Detects as T[] or as Array<T> (AST-based)'
     }
   ];
 
@@ -421,7 +539,8 @@ class AISlopDetector {
       throw new Error('Config must be an object');
     }
 
-    const validSeverities = ['critical', 'high', 'medium', 'low'];
+    const validOverrideSeverities = ['critical', 'high', 'medium', 'low', 'off'];
+    const validPatternSeverities = ['critical', 'high', 'medium', 'low'];
     const cfg = config as Record<string, unknown>;
 
     // Validate customPatterns
@@ -440,8 +559,8 @@ class AISlopDetector {
         if (!pattern.message || typeof pattern.message !== 'string') {
           throw new Error(`customPatterns[${i}].message must be a string`);
         }
-        if (!pattern.severity || !validSeverities.includes(pattern.severity as string)) {
-          throw new Error(`customPatterns[${i}].severity must be one of: ${validSeverities.join(', ')}`);
+        if (!pattern.severity || !validPatternSeverities.includes(pattern.severity as string)) {
+          throw new Error(`customPatterns[${i}].severity must be one of: ${validPatternSeverities.join(', ')}`);
         }
         // Validate regex is valid
         try {
@@ -458,8 +577,8 @@ class AISlopDetector {
         throw new Error('severityOverrides must be an object');
       }
       for (const [key, value] of Object.entries(cfg.severityOverrides as Record<string, unknown>)) {
-        if (!validSeverities.includes(value as string)) {
-          throw new Error(`severityOverrides.${key} must be one of: ${validSeverities.join(', ')}`);
+        if (!validOverrideSeverities.includes(value as string)) {
+          throw new Error(`severityOverrides.${key} must be one of: ${validOverrideSeverities.join(', ')}`);
         }
       }
     }
@@ -845,6 +964,13 @@ class AISlopDetector {
           continue;
         }
 
+        // Skip AST-based patterns (detected by findUnsafeAssertions, not regex)
+        if (pattern.id === 'unsafe_double_type_assertion' ||
+            pattern.id === 'unsafe_object_assertion' ||
+            pattern.id === 'unsafe_array_assertion') {
+          continue;
+        }
+
         // Create a new RegExp object for each check to reset lastIndex
         const regex = new RegExp(pattern.pattern.source, pattern.pattern.flags);
         let match;
@@ -929,27 +1055,6 @@ class AISlopDetector {
             }
           }
 
-          // Special handling for unsafe_double_type_assertion - skip legitimate UI library patterns
-          if (pattern.id === 'unsafe_double_type_assertion') {
-            const fullLine = line.trim();
-            // Skip patterns that are actually safe (as unknown as Type)
-            if (fullLine.includes('as unknown as')) {
-              continue;
-            }
-            // Skip matches inside comment lines (e.g., "as soon as React")
-            if (fullLine.startsWith('//') || fullLine.startsWith('*') || fullLine.startsWith('/*')) {
-              continue;
-            }
-            // Skip matches where the first word after "as" is a common English word
-            // indicating natural language rather than a type assertion
-            // e.g., "as soon as React hydrates" — "soon" is English, not a type
-            const firstWord = match[0].match(/^as\s+(\w+)/i)?.[1]?.toLowerCase();
-            const englishWords = ['soon', 'quick', 'quickly', 'fast', 'smooth', 'long', 'much', 'little', 'well', 'good', 'bad', 'easy', 'hard', 'simple', 'clear', 'many', 'few', 'close', 'far', 'near'];
-            if (firstWord && englishWords.includes(firstWord)) {
-              continue;
-            }
-          }
-
           // Special handling for production_console_log - skip legitimate error handling and debugging patterns
           if (pattern.id === 'production_console_log') {
             const fullLine = line.trim();
@@ -1024,6 +1129,8 @@ class AISlopDetector {
             }
           }
 
+          if (pattern.severity === 'off') continue;
+
           this.issues.push({
             type: pattern.id,
             file: filePath,
@@ -1039,6 +1146,38 @@ class AISlopDetector {
       // Now handle complex nested conditionals separately with improved logic
       this.analyzeComplexNestedConditionals(filePath, lines, i, lineNumber, line);
 
+    }
+
+    // AST-based unsafe assertion detection (.ts/.tsx only)
+    if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+      const skipInQuiet = quiet && (
+        filePath.includes('__tests__') ||
+        filePath.includes('.test.') ||
+        filePath.includes('.spec.') ||
+        filePath.includes('__mocks__') ||
+        filePath.includes('test-')
+      );
+
+      if (!skipInQuiet) {
+        const astFindings = findUnsafeAssertions(content, filePath);
+        for (const finding of astFindings) {
+          const pattern = this.detectionPatterns.find(p => p.id === finding.type);
+          const effectiveSeverity = pattern ? pattern.severity : finding.severity;
+          if (effectiveSeverity === 'off') continue;
+
+          this.issues.push({
+            type: finding.type,
+            file: finding.file,
+            line: finding.line,
+            column: finding.column,
+            code: finding.code,
+            message: pattern
+              ? `${pattern.message} (${pattern.description})`
+              : finding.message,
+            severity: effectiveSeverity,
+          });
+        }
+      }
     }
 
     // Special handling for package.json and package-lock.json to detect fresh package versions
@@ -1683,6 +1822,8 @@ class AISlopDetector {
       any_type_usage: 15,
       unsafe_type_assertion: 12,
       unsafe_double_type_assertion: 12,
+      unsafe_object_assertion: 12,
+      unsafe_array_assertion: 12,
 
       // Soul death
       overconfident_comment: 10,
@@ -1825,4 +1966,4 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   });
 }
 
-export { AISlopDetector, AISlopIssue, ConsolidatedIssue, DetectionPattern };
+export { AISlopDetector, AISlopIssue, ConsolidatedIssue, DetectionPattern, UnsafeAssertionFinding };

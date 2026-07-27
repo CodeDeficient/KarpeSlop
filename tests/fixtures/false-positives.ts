@@ -156,15 +156,6 @@ async function fetchWithPromiseCatch() {
         .catch(err => console.error('Fetch failed:', err));
 }
 
-// ============================================================
-// Also: as unknown as Type is a SAFE double assertion
-// ============================================================
-
-const safeCast = someValue as unknown as string;
-const data = jsonValue as unknown as User[];
-
-interface User { id: string; name: string; }
-
 export {
     useDataFetcher,
     fetchNearbyTrucks,
