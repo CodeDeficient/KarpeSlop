@@ -228,12 +228,12 @@ function visit(node: ts.Node) {
       const sourceLine = lineIdx + 1;
       const column = charIdx + 1;
 
-      if (lineIsSuppressed(sourceLine)) {
-        ts.forEachChild(node, visit);
-        return;
-      }
-
       if (ts.isAsExpression(node.expression)) {
+        if (lineIsSuppressed(sourceLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_double_type_assertion',
@@ -261,10 +261,16 @@ function visit(node: ts.Node) {
           });
         }
       } else if (node.type.kind === ts.SyntaxKind.AnyKeyword) {
-        // Use the position of the type node (same line as `as` keyword) for correct line reporting
+        // Use the position of the type node for correct line reporting and suppression anchoring
         const { line: asLineIdx, character: asCharIdx } = sourceFile.getLineAndCharacterOfPosition(node.type.getStart(sourceFile));
         const asLine = asLineIdx + 1;
         const asColumn = asCharIdx + 1;
+
+        if (lineIsSuppressed(asLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_type_assertion',
@@ -277,6 +283,11 @@ function visit(node: ts.Node) {
           assertionForm: 'as_any',
         });
       } else if (isUnsafeObjectType(node.type)) {
+        if (lineIsSuppressed(sourceLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_object_assertion',
@@ -289,6 +300,11 @@ function visit(node: ts.Node) {
           assertionForm: 'as_object',
         });
       } else if (isArrayType(node.type)) {
+        if (lineIsSuppressed(sourceLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_array_assertion',
@@ -493,7 +509,7 @@ class AISlopDetector {
       message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
       severity: 'high',
       description: 'Detects unsafe as any assertions (AST-based)',
-      fix: "Use 'as unknown as TargetType' or implement a runtime type guard with validation",
+      fix: "Prefer migrating the source/data contract first. Otherwise validate the value at the boundary with a runtime type guard or validation schema, then narrow the resulting unknown value. Do not use chained type assertions.",
       learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates',
       skipTests: true,
     },

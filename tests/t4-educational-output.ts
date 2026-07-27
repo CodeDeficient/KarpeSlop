@@ -6,7 +6,7 @@
 // Should show: Fix: Replace with 'unknown' and use type guards
 const data: any = {};
 
-// Should show: Fix: Use 'as unknown as TargetType'
+// Should show: Fix: Prefer migrating the source/data contract first
 const value = something as any;
 
 // Should show: Fix: Actually implement the logic

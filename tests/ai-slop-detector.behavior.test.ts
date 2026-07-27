@@ -270,6 +270,22 @@ test('findUnsafeAssertions detects unsafe as any assertion in multiline expressi
   assert.equal(findings[0].line, 2);
 });
 
+test('findUnsafeAssertions suppresses multiline as any with eslint-disable-line on the any line', () => {
+  const code = 'const x = value as\nany; // eslint-disable-line';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('unsafe_type_assertion guidance does not recommend chained assertion pattern to users', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), path.resolve(process.cwd(), 'tests/t4-educational-output.ts')],
+    { encoding: 'utf-8', cwd: process.cwd() }
+  );
+
+  assert.ok(!result.stdout.includes('as unknown as TargetType'),
+    `guidance should not recommend chained assertions. stdout:"${result.stdout}"`);
+});
+
 test('findUnsafeAssertions detects multiple as any assertions on separate lines', () => {
   const code = 'const a = x as any;\nconst b = y as any;';
 
