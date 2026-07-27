@@ -2,6 +2,22 @@
 
 All notable changes will be documented in this file.
 
+## [1.0.28] - 2026-07-27
+
+### Added
+- **AST-based unsafe assertion detector**: `findUnsafeAssertions()` uses the TypeScript Compiler API to detect three assertion forms that bypass structural type safety:
+  - `unsafe_double_type_assertion` — `expr as unknown as T` (chained `unknown` cast). Previously suppressed as "safe"; now reports at `high` severity by default.
+  - `unsafe_object_assertion` — `expr as Record<...>` or `expr as { ... }`.
+  - `unsafe_array_assertion` — `expr as T[]` or `expr as Array<T>`.
+- **Configurable severity**: All three new patterns respect the existing `severityOverrides` mechanism in `.karpesloprc.json`.
+- **Exclusions**: No reporting for `as const`, `as typeof`, `as keyof`, `.d.ts` files, or lines guarded by `@ts-expect-error`/`eslint-disable-next-line`.
+- **Regression fixtures**: `tests/fixtures/unsafe-assertions.ts` with the issue #22 reproduction snippet plus safe-cast boundary tests.
+
+### Changed
+- **BREAKING**: `as unknown as T` is no longer treated as a guaranteed-safe pattern. It now produces a `high`-severity finding (`unsafe_double_type_assertion`). Silence it project-wide via `severityOverrides: { "unsafe_double_type_assertion": "off" }` in `.karpesloprc.json`.
+- **Removed** the regex-based `unsafe_double_type_assertion` pattern and its heuristic skip block (English-word false-positive filter). The AST visitor naturally excludes comments and non-assertion text, making the heuristic unnecessary.
+- `tests/fixtures/false-positives.ts`: Removed the `as unknown as Type` "safe" assertion block (lines referencing `someValue as unknown as string` / `jsonValue as unknown as User[]`).
+
 ## [1.0.27] - 2026-06-16
 
 ### Changed
