@@ -1,0 +1,23 @@
+#!/bin/sh
+
+set -eu
+
+current_branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+
+case "$current_branch" in
+  main|master)
+    printf '%s\n' 'Push blocked: create a feature branch and open a pull request instead of pushing from main/master.' >&2
+    exit 1
+    ;;
+esac
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      printf '%s\n' "Push blocked: direct updates to $remote_ref are not allowed. Push your feature branch and open a pull request." >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit 0

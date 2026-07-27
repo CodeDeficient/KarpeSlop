@@ -141,6 +141,16 @@ Create `.karpesloprc.json` in your project root:
 
 ## CI/CD Integration
 
+### Local Git Hooks
+
+Install the repository's shared hooks once after cloning:
+
+```bash
+./scripts/setup-git-hooks.sh
+```
+
+The pre-push hook blocks direct pushes from `main`/`master` and blocks pushes targeting those protected branches. Use a feature branch and open a pull request instead.
+
 ### GitHub Actions
 
 ```yaml
