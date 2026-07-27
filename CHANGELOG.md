@@ -6,6 +6,9 @@ All notable changes will be documented in this file.
 
 ### Changed
 - **`unsafe_type_assertion` migrated from regex to AST detection**: `as any` assertions are now detected by the TypeScript Compiler API instead of a line-based regex. Comments and strings containing `as any` are no longer reported. Nested and multiline assertions are handled syntactically. The pattern ID and configuration key remain unchanged — existing `severityOverrides` continue to work.
+- **`unsafe_double_type_assertion` broadened**: Now detects any chained assertion (`as X as Y`), not only `as unknown as Y`. The `assertionForm` metadata field changed from `as_unknown_as` to `chained_as`. The message no longer references `as unknown as`.
+- **First-line inline suppressions fixed**: `// eslint-disable-line` and `@ts-ignore` on line 1 now suppress findings correctly.
+- **Test-file exclusion restored**: `unsafe_type_assertion` is once again skipped in `isTestFile` paths (`.test.*`, `.spec.*`, `__tests__/`, etc.) during normal scans, matching the pre-migration behavior.
 
 ## [1.0.28] - 2026-07-27
 
