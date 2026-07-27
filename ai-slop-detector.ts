@@ -178,27 +178,6 @@ export function findUnsafeAssertions(sourceText: string, fileName: string): Unsa
   const scriptKind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKind);
   const findings: UnsafeAssertionFinding[] = [];
-  const lines = sourceText.split('\n');
-
-  const lineIsSuppressed = (line: number): boolean => {
-    const currentLine = lines[line - 1];
-    if (
-      currentLine.includes('@ts-expect-error') ||
-      currentLine.includes('@ts-ignore') ||
-      currentLine.includes('eslint-disable-line') ||
-      currentLine.includes('eslint-disable')
-    ) return true;
-    if (line > 1) {
-      const prevLine = lines[line - 2];
-      return (
-        prevLine.includes('@ts-expect-error') ||
-        prevLine.includes('@ts-ignore') ||
-        prevLine.includes('eslint-disable-next-line') ||
-        prevLine.includes('eslint-disable')
-      );
-    }
-    return false;
-  };
 
   // Syntax-only (non-type-checked) detection: matches by identifier text, not
   // resolved symbol. A local type named Record or Array shadowing the built-in
@@ -229,11 +208,6 @@ function visit(node: ts.Node) {
       const column = charIdx + 1;
 
       if (ts.isAsExpression(node.expression)) {
-        if (lineIsSuppressed(sourceLine)) {
-          ts.forEachChild(node, visit);
-          return;
-        }
-
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_double_type_assertion',
@@ -266,11 +240,6 @@ function visit(node: ts.Node) {
         const asLine = asLineIdx + 1;
         const asColumn = asCharIdx + 1;
 
-        if (lineIsSuppressed(asLine)) {
-          ts.forEachChild(node, visit);
-          return;
-        }
-
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_type_assertion',
@@ -283,11 +252,6 @@ function visit(node: ts.Node) {
           assertionForm: 'as_any',
         });
       } else if (isUnsafeObjectType(node.type)) {
-        if (lineIsSuppressed(sourceLine)) {
-          ts.forEachChild(node, visit);
-          return;
-        }
-
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_object_assertion',
@@ -300,11 +264,6 @@ function visit(node: ts.Node) {
           assertionForm: 'as_object',
         });
       } else if (isArrayType(node.type)) {
-        if (lineIsSuppressed(sourceLine)) {
-          ts.forEachChild(node, visit);
-          return;
-        }
-
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_array_assertion',
@@ -1045,16 +1004,6 @@ class AISlopDetector {
 
         while ((match = regex.exec(line)) !== null) {
           // ========== PHASE 1: CONTEXT-AWARE WHITELISTING ==========
-
-          // Skip any pattern that has an explicit eslint-disable or ts-expect-error on the same or previous line
-          if (pattern.id.includes('any') || pattern.id.includes('unsafe')) {
-            const prevLine = i > 0 ? lines[i - 1] : '';
-            if (line.includes('eslint-disable') || line.includes('@ts-expect-error') ||
-              line.includes('@ts-ignore') || prevLine.includes('eslint-disable-next-line') ||
-              prevLine.includes('@ts-expect-error')) {
-              continue; // Developer explicitly acknowledged this
-            }
-          }
 
           // Skip .d.ts declaration files entirely for 'any' related patterns
           if (pattern.id.includes('any') && filePath.endsWith('.d.ts')) {

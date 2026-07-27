@@ -170,14 +170,18 @@ test('findUnsafeAssertions does not report in .d.ts files', () => {
   assert.equal(findUnsafeAssertions('const x = value as unknown as Foo;', 'types.d.ts').length, 0);
 });
 
-test('findUnsafeAssertions does not report when preceded by @ts-expect-error', () => {
+test('findUnsafeAssertions reports despite @ts-expect-error comment', () => {
   const code = '// @ts-expect-error\nconst x = value as unknown as Foo;';
-  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+  const findings = findUnsafeAssertions(code, 'x.ts');
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_double_type_assertion');
 });
 
-test('findUnsafeAssertions does not report when preceded by eslint-disable-next-line', () => {
+test('findUnsafeAssertions reports despite eslint-disable-next-line comment', () => {
   const code = '// eslint-disable-next-line @typescript-eslint/no-unused-vars\nconst x = value as Record<string, unknown>;';
-  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+  const findings = findUnsafeAssertions(code, 'x.ts');
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_object_assertion');
 });
 
 test('findUnsafeAssertions detects unsafe array assertion as EventRow[]', () => {
@@ -270,9 +274,12 @@ test('findUnsafeAssertions detects unsafe as any assertion in multiline expressi
   assert.equal(findings[0].line, 2);
 });
 
-test('findUnsafeAssertions suppresses multiline as any with eslint-disable-line on the any line', () => {
+test('findUnsafeAssertions reports multiline as any despite eslint-disable-line on the any line', () => {
   const code = 'const x = value as\nany; // eslint-disable-line';
-  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+  const findings = findUnsafeAssertions(code, 'x.ts');
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
+  assert.equal(findings[0].line, 2);
 });
 
 test('unsafe_type_assertion guidance does not recommend chained assertion pattern to users', () => {
@@ -295,23 +302,29 @@ test('findUnsafeAssertions detects multiple as any assertions on separate lines'
   assert.ok(findings.every(f => f.type === 'unsafe_type_assertion'));
 });
 
-test('findUnsafeAssertions does not report as any when preceded by @ts-expect-error', () => {
+test('findUnsafeAssertions reports as any despite preceding @ts-expect-error', () => {
   const code = '// @ts-expect-error\nconst x = value as any;';
-  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+  const findings = findUnsafeAssertions(code, 'x.ts');
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
 });
 
-test('findUnsafeAssertions does not report as any when preceded by eslint-disable-next-line', () => {
+test('findUnsafeAssertions reports as any despite preceding eslint-disable-next-line', () => {
   const code = '// eslint-disable-next-line @typescript-eslint/no-unused-vars\nconst x = value as any;';
-  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+  const findings = findUnsafeAssertions(code, 'x.ts');
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
 });
 
 test('findUnsafeAssertions does not report as any in .d.ts files', () => {
   assert.equal(findUnsafeAssertions('const x = value as any;', 'types.d.ts').length, 0);
 });
 
-test('findUnsafeAssertions suppresses as any on line 1 with eslint-disable-line', () => {
+test('findUnsafeAssertions reports as any despite eslint-disable-line on same line', () => {
   const code = 'const x = value as any; // eslint-disable-line';
-  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+  const findings = findUnsafeAssertions(code, 'x.ts');
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
 });
 
 test('findUnsafeAssertions detects chained as unknown as T as unsafe_double_type_assertion', () => {

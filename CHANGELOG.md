@@ -2,6 +2,15 @@
 
 All notable changes will be documented in this file.
 
+## [1.0.30] - 2026-07-27
+
+### Breaking
+- **Code-level suppression removed**: KarpeSlop no longer suppresses findings due to source-code comments. `eslint-disable`, `eslint-disable-line`, `eslint-disable-next-line`, `@ts-ignore`, and `@ts-expect-error` comments no longer hide any findings. The only supported suppression mechanism is reviewed configuration via `severityOverrides` in `.karpesloprc.json`. This applies to AST-detected assertions (`findUnsafeAssertions`) and regex-detected pattern matches (`analyzeFile`).
+
+### Removed
+- `lineIsSuppressed()` function and its four call sites in the AST assertion visitor.
+- The generic regex-pattern suppression check that skipped findings on lines with `eslint-disable`, `@ts-expect-error`, or `@ts-ignore` comments.
+
 ## [1.0.29] - 2026-07-27
 
 ### Changed
