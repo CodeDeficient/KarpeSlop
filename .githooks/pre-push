@@ -1,0 +1,15 @@
+#!/bin/sh
+# Managed by KarpeSlop setup-git-hooks.sh.
+
+set -eu
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master)
+      printf '%s\n' "Push blocked: direct updates to $remote_ref are not allowed. Push your feature branch and open a pull request." >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit 0
