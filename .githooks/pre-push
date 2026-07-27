@@ -1,4 +1,5 @@
 #!/bin/sh
+# Managed by KarpeSlop setup-git-hooks.sh.
 
 set -eu
 
