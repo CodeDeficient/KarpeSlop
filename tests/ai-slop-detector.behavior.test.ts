@@ -306,6 +306,45 @@ test('findUnsafeAssertions detects chained as unknown as T as unsafe_double_type
   assert.ok(finding.code.includes('as unknown as'));
 });
 
+test('findUnsafeAssertions reports both double and any assertion for chained as unknown as any', () => {
+  const code = 'const value = input as unknown as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  const types = findings.map(f => f.type);
+  assert.ok(types.includes('unsafe_double_type_assertion'), 'should report double assertion');
+  assert.ok(types.includes('unsafe_type_assertion'), 'should report any assertion');
+  assert.ok(findings.every(f => f.severity === 'high'));
+});
+
+test('severityOverrides disabling unsafe_double_type_assertion still reports unsafe_type_assertion for chained as unknown as any', () => {
+  const fixtureFile = path.resolve(process.cwd(), 'tests/fixtures/temp-chained-any-fixture.ts');
+  const configFile = path.resolve(process.cwd(), '.karpesloprc.json');
+  const savedConfig = fs.readFileSync(configFile, 'utf-8');
+
+  fs.writeFileSync(fixtureFile, 'const value = input as unknown as any;\n', 'utf-8');
+
+  try {
+    const overriddenConfig = JSON.parse(savedConfig);
+    overriddenConfig.severityOverrides = { "unsafe_double_type_assertion": "off" };
+    fs.writeFileSync(configFile, JSON.stringify(overriddenConfig), 'utf-8');
+
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--strict', fixtureFile],
+      { encoding: 'utf-8', cwd: process.cwd() }
+    );
+
+    assert.equal(result.status, 1, `Expected exit code 1 (high severity finding) but got ${result.status}. stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+    assert.ok(!result.stdout.includes('unsafe_double'), 'should not mention the suppressed double assertion');
+    assert.ok(result.stdout.includes('unsafe_type_assertion'), 'should still mention the any assertion');
+  } finally {
+    fs.unlinkSync(fixtureFile);
+    fs.writeFileSync(configFile, savedConfig, 'utf-8');
+  }
+});
+
 test('-- separator lets paths starting with - be treated as targets, not flags', () => {
   const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-dash-'));
   const fixtureFile = path.join(tmpDir, '-my-file.ts');

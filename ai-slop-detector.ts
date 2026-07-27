@@ -241,6 +241,21 @@ function visit(node: ts.Node) {
           severity: 'high',
           assertionForm: 'as_unknown_as',
         });
+        // When the target type is also `any`, report it independently so disabling
+        // unsafe_double_type_assertion doesn't silently hide the unsafe `as any`.
+        if (node.type.kind === ts.SyntaxKind.AnyKeyword) {
+          const { line: asLineIdx, character: asCharIdx } = sourceFile.getLineAndCharacterOfPosition(node.type.getStart(sourceFile));
+          findings.push({
+            type: 'unsafe_type_assertion',
+            file: fileName,
+            line: asLineIdx + 1,
+            column: asCharIdx + 1,
+            code,
+            message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
+            severity: 'high',
+            assertionForm: 'as_any',
+          });
+        }
       } else if (node.type.kind === ts.SyntaxKind.AnyKeyword) {
         // Use the position of the type node (same line as `as` keyword) for correct line reporting
         const { line: asLineIdx, character: asCharIdx } = sourceFile.getLineAndCharacterOfPosition(node.type.getStart(sourceFile));
