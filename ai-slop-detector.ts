@@ -190,6 +190,10 @@ export function findUnsafeAssertions(sourceText: string, fileName: string): Unsa
     );
   };
 
+  // Syntax-only (non-type-checked) detection: matches by identifier text, not
+  // resolved symbol. A local type named Record or Array shadowing the built-in
+  // utility types would produce a false positive. Accepted trade-off for a
+  // syntax-level tool.
   function isUnsafeObjectType(type: ts.TypeNode): boolean {
   if (ts.isTypeReferenceNode(type)) {
     const name = ts.isIdentifier(type.typeName) ? type.typeName.text : '';
@@ -210,8 +214,9 @@ function isArrayType(type: ts.TypeNode): boolean {
 
 function visit(node: ts.Node) {
     if (ts.isAsExpression(node)) {
-      const sourceLine = sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1;
-      const column = sourceFile.getLineAndCharacterOfPosition(node.getStart()).character + 1;
+      const { line: lineIdx, character: charIdx } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+      const sourceLine = lineIdx + 1;
+      const column = charIdx + 1;
 
       if (prevLineIsSuppressed(sourceLine)) {
         ts.forEachChild(node, visit);
@@ -971,6 +976,9 @@ class AISlopDetector {
           continue;
         }
 
+        // Skip disabled patterns early to avoid unnecessary regex work
+        if (pattern.severity === 'off') continue;
+
         // Create a new RegExp object for each check to reset lastIndex
         const regex = new RegExp(pattern.pattern.source, pattern.pattern.flags);
         let match;
@@ -1129,8 +1137,6 @@ class AISlopDetector {
             }
           }
 
-          if (pattern.severity === 'off') continue;
-
           this.issues.push({
             type: pattern.id,
             file: filePath,
@@ -1162,6 +1168,9 @@ class AISlopDetector {
         const astFindings = findUnsafeAssertions(content, filePath);
         for (const finding of astFindings) {
           const pattern = this.detectionPatterns.find(p => p.id === finding.type);
+          if (pattern && ((pattern.skipTests && isTestFile) || (pattern.skipMocks && isMockFile))) {
+            continue;
+          }
           const effectiveSeverity = pattern ? pattern.severity : finding.severity;
           if (effectiveSeverity === 'off') continue;
 

@@ -131,17 +131,17 @@ test('severityOverrides with "off" silences unsafe_double_type_assertion without
 
   fs.writeFileSync(fixtureFile, 'const x = value as unknown as Foo;\n', 'utf-8');
 
-  const overriddenConfig = JSON.parse(savedConfig);
-  overriddenConfig.severityOverrides = { "unsafe_double_type_assertion": "off" };
-  fs.writeFileSync(configFile, JSON.stringify(overriddenConfig), 'utf-8');
-
-  const result = spawnSync(
-    process.execPath,
-    ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--strict', fixtureFile],
-    { encoding: 'utf-8', cwd: process.cwd() }
-  );
-
   try {
+    const overriddenConfig = JSON.parse(savedConfig);
+    overriddenConfig.severityOverrides = { "unsafe_double_type_assertion": "off" };
+    fs.writeFileSync(configFile, JSON.stringify(overriddenConfig), 'utf-8');
+
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--strict', fixtureFile],
+      { encoding: 'utf-8', cwd: process.cwd() }
+    );
+
     assert.equal(result.status, 0, `Expected exit code 0 but got ${result.status}. stdout:"${result.stdout}" stderr:"${result.stderr}"`);
     assert.ok(!result.stdout.includes('unsafe_double'), 'should not mention the suppressed pattern');
   } finally {
