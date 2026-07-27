@@ -488,7 +488,7 @@ class AISlopDetector {
     },
     {
       id: 'unsafe_type_assertion',
-      pattern: /unused_ast_detected/,
+      pattern: /(?!)/,
       message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
       severity: 'high',
       description: 'Detects unsafe as any assertions (AST-based)',
@@ -539,21 +539,21 @@ class AISlopDetector {
     },
     {
       id: 'unsafe_double_type_assertion',
-      pattern: /unused_ast_detected/,
+      pattern: /(?!)/,
       message: "Found unsafe double type assertion. Use proper type guards or runtime validation.",
       severity: 'high',
       description: 'Detects chained type assertions (AST-based)'
     },
     {
       id: 'unsafe_object_assertion',
-      pattern: /unused_ast_detected/,
+      pattern: /(?!)/,
       message: "Found unsafe object type assertion. Use proper type guards or runtime validation.",
       severity: 'high',
       description: 'Detects as Record<...> or as { ... } (AST-based)'
     },
     {
       id: 'unsafe_array_assertion',
-      pattern: /unused_ast_detected/,
+      pattern: /(?!)/,
       message: "Found unsafe array type assertion. Use proper type guards or runtime validation.",
       severity: 'high',
       description: 'Detects as T[] or as Array<T> (AST-based)'
@@ -1156,8 +1156,6 @@ class AISlopDetector {
               continue;
             }
           }
-
-
 
 
           // In quiet mode, skip test and mock files for all patterns except production console logs
@@ -1850,8 +1848,6 @@ class AISlopDetector {
     fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
     console.log(`\n📈 Results exported to: ${outputPath}`);
   }
-
-
 
 
   /**
