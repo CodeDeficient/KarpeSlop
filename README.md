@@ -149,7 +149,7 @@ Install the repository's shared hooks once after cloning:
 ./scripts/setup-git-hooks.sh
 ```
 
-The pre-push hook blocks pushes targeting `main`/`master`. Use a feature branch and open a pull request instead. Existing hooks are never overwritten; setup stops and asks you to chain the KarpeSlop hook manually if a pre-push hook already exists. To update an installed copy, find the active hooks directory with `git rev-parse --git-path hooks`, move its `pre-push` file to the trash, and rerun the setup script. If another pre-push hook exists, manually invoke `.githooks/pre-push` from that hook instead of rerunning setup.
+The pre-push hook blocks pushes targeting `main`/`master`. Use a feature branch and open a pull request instead. Existing hooks are never overwritten; setup stops and asks you to chain the KarpeSlop hook manually if an unrelated pre-push hook already exists. To update a previously installed KarpeSlop copy, find the active hooks directory with `git rev-parse --git-path hooks`, move that managed `pre-push` file to the trash, and rerun the setup script. Do not remove an unrelated hook; manually invoke `.githooks/pre-push` from it instead.
 
 ### GitHub Actions
 
