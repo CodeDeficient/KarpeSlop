@@ -2,6 +2,11 @@
 
 All notable changes will be documented in this file.
 
+## [1.0.29] - 2026-07-27
+
+### Changed
+- **`unsafe_type_assertion` migrated from regex to AST detection**: `as any` assertions are now detected by the TypeScript Compiler API instead of a line-based regex. Comments and strings containing `as any` are no longer reported. Nested and multiline assertions are handled syntactically. The pattern ID and configuration key remain unchanged — existing `severityOverrides` continue to work.
+
 ## [1.0.28] - 2026-07-27
 
 ### Added

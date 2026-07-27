@@ -223,6 +223,76 @@ test('findUnsafeAssertions on the fixtures/unsafe-assertions.ts fixture reports 
   assert.ok(objFindings[0].code.includes('Record<string, unknown>'));
 });
 
+test('findUnsafeAssertions detects unsafe as any assertion', () => {
+  const code = 'const x = value as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
+  assert.equal(findings[0].line, 1);
+  assert.equal(findings[0].severity, 'high');
+  assert.ok(findings[0].code.includes('as any'));
+});
+
+test('findUnsafeAssertions does not report as any inside a line comment', () => {
+  const code = '// this is as any comment';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any inside a string', () => {
+  const code = 'const msg = "this is as any test";';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any inside a template literal', () => {
+  const code = 'const msg = `this is as any test`;';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions detects unsafe as any assertion in nested expression', () => {
+  const code = 'const x = foo(value as any);';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
+  assert.equal(findings[0].line, 1);
+});
+
+test('findUnsafeAssertions detects unsafe as any assertion in multiline expression', () => {
+  const code = 'const x = value as\n  any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
+  assert.equal(findings[0].line, 2);
+});
+
+test('findUnsafeAssertions detects multiple as any assertions on separate lines', () => {
+  const code = 'const a = x as any;\nconst b = y as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every(f => f.type === 'unsafe_type_assertion'));
+});
+
+test('findUnsafeAssertions does not report as any when preceded by @ts-expect-error', () => {
+  const code = '// @ts-expect-error\nconst x = value as any;';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any when preceded by eslint-disable-next-line', () => {
+  const code = '// eslint-disable-next-line @typescript-eslint/no-unused-vars\nconst x = value as any;';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any in .d.ts files', () => {
+  assert.equal(findUnsafeAssertions('const x = value as any;', 'types.d.ts').length, 0);
+});
+
 test('findUnsafeAssertions detects chained as unknown as T as unsafe_double_type_assertion', () => {
   const code = 'const rows = value as unknown as EventRow[];';
 

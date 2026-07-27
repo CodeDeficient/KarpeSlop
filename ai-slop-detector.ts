@@ -241,6 +241,22 @@ function visit(node: ts.Node) {
           severity: 'high',
           assertionForm: 'as_unknown_as',
         });
+      } else if (node.type.kind === ts.SyntaxKind.AnyKeyword) {
+        // Use the position of the type node (same line as `as` keyword) for correct line reporting
+        const { line: asLineIdx, character: asCharIdx } = sourceFile.getLineAndCharacterOfPosition(node.type.getStart(sourceFile));
+        const asLine = asLineIdx + 1;
+        const asColumn = asCharIdx + 1;
+        const code = sourceText.slice(node.getStart(sourceFile), node.end);
+        findings.push({
+          type: 'unsafe_type_assertion',
+          file: fileName,
+          line: asLine,
+          column: asColumn,
+          code,
+          message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
+          severity: 'high',
+          assertionForm: 'as_any',
+        });
       } else if (isUnsafeObjectType(node.type)) {
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
@@ -453,10 +469,10 @@ class AISlopDetector {
     },
     {
       id: 'unsafe_type_assertion',
-      pattern: /\s+as\s+any\b/g,
+      pattern: /unused_ast_detected/,
       message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
       severity: 'high',
-      description: 'Detects unsafe as any assertions',
+      description: 'Detects unsafe as any assertions (AST-based)',
       fix: "Use 'as unknown as TargetType' or implement a runtime type guard with validation",
       learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates'
     },
@@ -978,7 +994,8 @@ class AISlopDetector {
         // Skip AST-based patterns (detected by findUnsafeAssertions, not regex)
         if (pattern.id === 'unsafe_double_type_assertion' ||
             pattern.id === 'unsafe_object_assertion' ||
-            pattern.id === 'unsafe_array_assertion') {
+            pattern.id === 'unsafe_array_assertion' ||
+            pattern.id === 'unsafe_type_assertion') {
           continue;
         }
 
@@ -1120,13 +1137,6 @@ class AISlopDetector {
             }
           }
 
-          // Special handling for unsafe_type_assertion - skip legitimate test patterns
-          if (pattern.id === 'unsafe_type_assertion') {
-            // Skip these in test files where they might be legitimate for testing
-            if (filePath.includes('test') || filePath.includes('spec') || filePath.includes('__tests__')) {
-              continue;
-            }
-          }
 
 
 
