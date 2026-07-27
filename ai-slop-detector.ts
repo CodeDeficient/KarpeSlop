@@ -180,13 +180,19 @@ export function findUnsafeAssertions(sourceText: string, fileName: string): Unsa
   const findings: UnsafeAssertionFinding[] = [];
   const lines = sourceText.split('\n');
 
-  const prevLineIsSuppressed = (line: number): boolean => {
+  const lineIsSuppressed = (line: number): boolean => {
     if (line <= 1) return false;
     const prevLine = lines[line - 2];
+    const currentLine = lines[line - 1];
     return (
       prevLine.includes('@ts-expect-error') ||
       prevLine.includes('@ts-ignore') ||
-      prevLine.includes('eslint-disable-next-line')
+      prevLine.includes('eslint-disable-next-line') ||
+      prevLine.includes('eslint-disable') ||
+      currentLine.includes('@ts-expect-error') ||
+      currentLine.includes('@ts-ignore') ||
+      currentLine.includes('eslint-disable-line') ||
+      currentLine.includes('eslint-disable')
     );
   };
 
@@ -218,7 +224,7 @@ function visit(node: ts.Node) {
       const sourceLine = lineIdx + 1;
       const column = charIdx + 1;
 
-      if (prevLineIsSuppressed(sourceLine)) {
+      if (lineIsSuppressed(sourceLine)) {
         ts.forEachChild(node, visit);
         return;
       }
