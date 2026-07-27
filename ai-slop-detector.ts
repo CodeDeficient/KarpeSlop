@@ -181,19 +181,23 @@ export function findUnsafeAssertions(sourceText: string, fileName: string): Unsa
   const lines = sourceText.split('\n');
 
   const lineIsSuppressed = (line: number): boolean => {
-    if (line <= 1) return false;
-    const prevLine = lines[line - 2];
     const currentLine = lines[line - 1];
-    return (
-      prevLine.includes('@ts-expect-error') ||
-      prevLine.includes('@ts-ignore') ||
-      prevLine.includes('eslint-disable-next-line') ||
-      prevLine.includes('eslint-disable') ||
+    if (
       currentLine.includes('@ts-expect-error') ||
       currentLine.includes('@ts-ignore') ||
       currentLine.includes('eslint-disable-line') ||
       currentLine.includes('eslint-disable')
-    );
+    ) return true;
+    if (line > 1) {
+      const prevLine = lines[line - 2];
+      return (
+        prevLine.includes('@ts-expect-error') ||
+        prevLine.includes('@ts-ignore') ||
+        prevLine.includes('eslint-disable-next-line') ||
+        prevLine.includes('eslint-disable')
+      );
+    }
+    return false;
   };
 
   // Syntax-only (non-type-checked) detection: matches by identifier text, not
@@ -224,12 +228,12 @@ function visit(node: ts.Node) {
       const sourceLine = lineIdx + 1;
       const column = charIdx + 1;
 
-      if (lineIsSuppressed(sourceLine)) {
-        ts.forEachChild(node, visit);
-        return;
-      }
+      if (ts.isAsExpression(node.expression)) {
+        if (lineIsSuppressed(sourceLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
 
-      if (ts.isAsExpression(node.expression) && node.expression.type.kind === ts.SyntaxKind.UnknownKeyword) {
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_double_type_assertion',
@@ -237,11 +241,53 @@ function visit(node: ts.Node) {
           line: sourceLine,
           column,
           code,
-          message: "Found unsafe double type assertion via 'as unknown as'. Use proper type guards or validation instead.",
+          message: "Found unsafe double type assertion. Use proper type guards or validation instead.",
           severity: 'high',
-          assertionForm: 'as_unknown_as',
+          assertionForm: 'chained_as',
+        });
+        // When the target type is also `any`, report it independently so disabling
+        // unsafe_double_type_assertion doesn't silently hide the unsafe `as any`.
+        if (node.type.kind === ts.SyntaxKind.AnyKeyword) {
+          const { line: asLineIdx, character: asCharIdx } = sourceFile.getLineAndCharacterOfPosition(node.type.getStart(sourceFile));
+          findings.push({
+            type: 'unsafe_type_assertion',
+            file: fileName,
+            line: asLineIdx + 1,
+            column: asCharIdx + 1,
+            code,
+            message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
+            severity: 'high',
+            assertionForm: 'as_any',
+          });
+        }
+      } else if (node.type.kind === ts.SyntaxKind.AnyKeyword) {
+        // Use the position of the type node for correct line reporting and suppression anchoring
+        const { line: asLineIdx, character: asCharIdx } = sourceFile.getLineAndCharacterOfPosition(node.type.getStart(sourceFile));
+        const asLine = asLineIdx + 1;
+        const asColumn = asCharIdx + 1;
+
+        if (lineIsSuppressed(asLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
+        const code = sourceText.slice(node.getStart(sourceFile), node.end);
+        findings.push({
+          type: 'unsafe_type_assertion',
+          file: fileName,
+          line: asLine,
+          column: asColumn,
+          code,
+          message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
+          severity: 'high',
+          assertionForm: 'as_any',
         });
       } else if (isUnsafeObjectType(node.type)) {
+        if (lineIsSuppressed(sourceLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_object_assertion',
@@ -254,6 +300,11 @@ function visit(node: ts.Node) {
           assertionForm: 'as_object',
         });
       } else if (isArrayType(node.type)) {
+        if (lineIsSuppressed(sourceLine)) {
+          ts.forEachChild(node, visit);
+          return;
+        }
+
         const code = sourceText.slice(node.getStart(sourceFile), node.end);
         findings.push({
           type: 'unsafe_array_assertion',
@@ -451,14 +502,16 @@ class AISlopDetector {
       severity: 'high',
       description: 'Detects function parameters with any type'
     },
+    // AST-driven; regex is a never-match sentinel — detection is in findUnsafeAssertions
     {
       id: 'unsafe_type_assertion',
-      pattern: /\s+as\s+any\b/g,
+      pattern: /(?!)/,
       message: "Found unsafe 'as any' type assertion. Use proper type guards or validation.",
       severity: 'high',
-      description: 'Detects unsafe as any assertions',
-      fix: "Use 'as unknown as TargetType' or implement a runtime type guard with validation",
-      learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates'
+      description: 'Detects unsafe as any assertions (AST-based)',
+      fix: "Prefer migrating the source/data contract first. Otherwise validate the value at the boundary with a runtime type guard or validation schema, then narrow the resulting unknown value. Do not use chained type assertions.",
+      learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates',
+      skipTests: true,
     },
     {
       id: 'index_signature_any',
@@ -503,21 +556,21 @@ class AISlopDetector {
     },
     {
       id: 'unsafe_double_type_assertion',
-      pattern: /unused_ast_detected/,
-      message: "Found unsafe double type assertion via 'as unknown as'. Use proper type guards or runtime validation.",
+      pattern: /(?!)/,
+      message: "Found unsafe double type assertion. Use proper type guards or runtime validation.",
       severity: 'high',
-      description: 'Detects as unknown as T (AST-based)'
+      description: 'Detects chained type assertions (AST-based)'
     },
     {
       id: 'unsafe_object_assertion',
-      pattern: /unused_ast_detected/,
+      pattern: /(?!)/,
       message: "Found unsafe object type assertion. Use proper type guards or runtime validation.",
       severity: 'high',
       description: 'Detects as Record<...> or as { ... } (AST-based)'
     },
     {
       id: 'unsafe_array_assertion',
-      pattern: /unused_ast_detected/,
+      pattern: /(?!)/,
       message: "Found unsafe array type assertion. Use proper type guards or runtime validation.",
       severity: 'high',
       description: 'Detects as T[] or as Array<T> (AST-based)'
@@ -978,7 +1031,8 @@ class AISlopDetector {
         // Skip AST-based patterns (detected by findUnsafeAssertions, not regex)
         if (pattern.id === 'unsafe_double_type_assertion' ||
             pattern.id === 'unsafe_object_assertion' ||
-            pattern.id === 'unsafe_array_assertion') {
+            pattern.id === 'unsafe_array_assertion' ||
+            pattern.id === 'unsafe_type_assertion') {
           continue;
         }
 
@@ -1119,15 +1173,6 @@ class AISlopDetector {
               continue;
             }
           }
-
-          // Special handling for unsafe_type_assertion - skip legitimate test patterns
-          if (pattern.id === 'unsafe_type_assertion') {
-            // Skip these in test files where they might be legitimate for testing
-            if (filePath.includes('test') || filePath.includes('spec') || filePath.includes('__tests__')) {
-              continue;
-            }
-          }
-
 
 
           // In quiet mode, skip test and mock files for all patterns except production console logs
@@ -1820,8 +1865,6 @@ class AISlopDetector {
     fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
     console.log(`\n📈 Results exported to: ${outputPath}`);
   }
-
-
 
 
   /**

@@ -223,6 +223,97 @@ test('findUnsafeAssertions on the fixtures/unsafe-assertions.ts fixture reports 
   assert.ok(objFindings[0].code.includes('Record<string, unknown>'));
 });
 
+test('findUnsafeAssertions detects unsafe as any assertion', () => {
+  const code = 'const x = value as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
+  assert.equal(findings[0].line, 1);
+  assert.equal(findings[0].severity, 'high');
+  assert.ok(findings[0].code.includes('as any'));
+});
+
+test('findUnsafeAssertions does not report as any inside a line comment', () => {
+  const code = '// this is as any comment';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any inside a string', () => {
+  const code = 'const msg = "this is as any test";';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any inside a template literal', () => {
+  const code = 'const msg = `this is as any test`;';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions detects unsafe as any assertion in nested expression', () => {
+  const code = 'const x = foo(value as any);';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
+  assert.equal(findings[0].line, 1);
+});
+
+test('findUnsafeAssertions detects unsafe as any assertion in multiline expression', () => {
+  const code = 'const x = value as\n  any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].type, 'unsafe_type_assertion');
+  assert.equal(findings[0].line, 2);
+});
+
+test('findUnsafeAssertions suppresses multiline as any with eslint-disable-line on the any line', () => {
+  const code = 'const x = value as\nany; // eslint-disable-line';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('unsafe_type_assertion guidance does not recommend chained assertion pattern to users', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), path.resolve(process.cwd(), 'tests/t4-educational-output.ts')],
+    { encoding: 'utf-8', cwd: process.cwd() }
+  );
+
+  assert.ok(!result.stdout.includes('as unknown as TargetType'),
+    `guidance should not recommend chained assertions. stdout:"${result.stdout}"`);
+});
+
+test('findUnsafeAssertions detects multiple as any assertions on separate lines', () => {
+  const code = 'const a = x as any;\nconst b = y as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every(f => f.type === 'unsafe_type_assertion'));
+});
+
+test('findUnsafeAssertions does not report as any when preceded by @ts-expect-error', () => {
+  const code = '// @ts-expect-error\nconst x = value as any;';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any when preceded by eslint-disable-next-line', () => {
+  const code = '// eslint-disable-next-line @typescript-eslint/no-unused-vars\nconst x = value as any;';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
+test('findUnsafeAssertions does not report as any in .d.ts files', () => {
+  assert.equal(findUnsafeAssertions('const x = value as any;', 'types.d.ts').length, 0);
+});
+
+test('findUnsafeAssertions suppresses as any on line 1 with eslint-disable-line', () => {
+  const code = 'const x = value as any; // eslint-disable-line';
+  assert.equal(findUnsafeAssertions(code, 'x.ts').length, 0);
+});
+
 test('findUnsafeAssertions detects chained as unknown as T as unsafe_double_type_assertion', () => {
   const code = 'const rows = value as unknown as EventRow[];';
 
@@ -234,6 +325,131 @@ test('findUnsafeAssertions detects chained as unknown as T as unsafe_double_type
   assert.equal(finding.line, 1);
   assert.equal(finding.severity, 'high');
   assert.ok(finding.code.includes('as unknown as'));
+});
+
+test('findUnsafeAssertions detects chained as Foo as Bar as unsafe_double_type_assertion', () => {
+  const code = 'const value = input as Foo as Bar;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 1);
+  const finding = findings[0];
+  assert.equal(finding.type, 'unsafe_double_type_assertion');
+  assert.equal(finding.line, 1);
+  assert.equal(finding.severity, 'high');
+});
+
+test('findUnsafeAssertions reports 2 findings for 3-deep chain', () => {
+  const code = 'const value = input as Bar as Baz as Qux;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every(f => f.type === 'unsafe_double_type_assertion'));
+});
+
+test('findUnsafeAssertions reports 3 findings for 4-deep chain', () => {
+  const code = 'const value = input as Bar as Baz as Qux as Zap;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 3);
+  assert.ok(findings.every(f => f.type === 'unsafe_double_type_assertion'));
+});
+
+test('findUnsafeAssertions reports double and any for chained as Bar as any', () => {
+  const code = 'const value = input as Bar as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  const types = findings.map(f => f.type);
+  assert.ok(types.includes('unsafe_double_type_assertion'));
+  assert.ok(types.includes('unsafe_type_assertion'));
+
+  const anyFinding = findings.find(f => f.type === 'unsafe_type_assertion')!;
+  assert.ok(anyFinding.code.includes('as any'));
+});
+
+test('findUnsafeAssertions reports both double and any assertion for chained as unknown as any', () => {
+  const code = 'const value = input as unknown as any;';
+
+  const findings = findUnsafeAssertions(code, 'x.ts');
+
+  assert.equal(findings.length, 2);
+  const types = findings.map(f => f.type);
+  assert.ok(types.includes('unsafe_double_type_assertion'), 'should report double assertion');
+  assert.ok(types.includes('unsafe_type_assertion'), 'should report any assertion');
+  assert.ok(findings.every(f => f.severity === 'high'));
+});
+
+test('severityOverrides disabling unsafe_double_type_assertion still reports unsafe_type_assertion for chained as unknown as any', () => {
+  const fixtureFile = path.resolve(process.cwd(), 'tests/fixtures/temp-chained-any-fixture.ts');
+  const configFile = path.resolve(process.cwd(), '.karpesloprc.json');
+  const savedConfig = fs.readFileSync(configFile, 'utf-8');
+
+  fs.writeFileSync(fixtureFile, 'const value = input as unknown as any;\n', 'utf-8');
+
+  try {
+    const overriddenConfig = JSON.parse(savedConfig);
+    overriddenConfig.severityOverrides = { "unsafe_double_type_assertion": "off" };
+    fs.writeFileSync(configFile, JSON.stringify(overriddenConfig), 'utf-8');
+
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--strict', fixtureFile],
+      { encoding: 'utf-8', cwd: process.cwd() }
+    );
+
+    assert.equal(result.status, 1, `Expected exit code 1 (high severity finding) but got ${result.status}. stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+    assert.ok(!result.stdout.includes('unsafe_double'), 'should not mention the suppressed double assertion');
+    assert.ok(result.stdout.includes('unsafe_type_assertion'), 'should still mention the any assertion');
+  } finally {
+    fs.unlinkSync(fixtureFile);
+    fs.writeFileSync(configFile, savedConfig, 'utf-8');
+  }
+});
+
+test('default mode skips unsafe_type_assertion in test files', () => {
+  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-spec-'));
+  const fixtureFile = path.join(tmpDir, 'component.test.ts');
+
+  fs.writeFileSync(fixtureFile, 'const x = value as any;\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), fixtureFile],
+    { encoding: 'utf-8', cwd: process.cwd() }
+  );
+
+  try {
+    assert.ok(!result.stdout.includes('unsafe_type_assertion'),
+      `should not report as any in test files. stdout:"${result.stdout}"`);
+  } finally {
+    fs.unlinkSync(fixtureFile);
+    fs.rmdirSync(tmpDir);
+  }
+});
+
+test('default mode still reports unsafe_type_assertion in non-test files', () => {
+  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-src-'));
+  const fixtureFile = path.join(tmpDir, 'component.ts');
+
+  fs.writeFileSync(fixtureFile, 'const x = value as any;\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), fixtureFile],
+    { encoding: 'utf-8', cwd: process.cwd() }
+  );
+
+  try {
+    assert.ok(result.stdout.includes('unsafe_type_assertion'),
+      `should report as any in non-test files. stdout:"${result.stdout}"`);
+  } finally {
+    fs.unlinkSync(fixtureFile);
+    fs.rmdirSync(tmpDir);
+  }
 });
 
 test('-- separator lets paths starting with - be treated as targets, not flags', () => {

@@ -2,6 +2,16 @@
 
 All notable changes will be documented in this file.
 
+## [1.0.29] - 2026-07-27
+
+### Changed
+- **`unsafe_type_assertion` migrated from regex to AST detection**: `as any` assertions are now detected by the TypeScript Compiler API instead of a line-based regex. Comments and strings containing `as any` are no longer reported. Nested and multiline assertions are handled syntactically. The pattern ID and configuration key remain unchanged — existing `severityOverrides` continue to work.
+- **`unsafe_double_type_assertion` broadened**: Now detects any chained assertion (`as X as Y`), not only `as unknown as Y`. The `assertionForm` metadata field changed from `as_unknown_as` to `chained_as`. The message no longer references `as unknown as`.
+- **First-line inline suppressions fixed**: `// eslint-disable-line` and `@ts-ignore` on line 1 now suppress findings correctly.
+- **Test-file exclusion restored**: `unsafe_type_assertion` is once again skipped in `isTestFile` paths (`.test.*`, `.spec.*`, `__tests__/`, `__mocks__/`, `test-`) during normal scans. The exclusion is narrower than the pre-migration heuristic (`includes('test')`), so paths merely containing `test` or `spec` (e.g. `tests/utils/helper.ts`, `my-test-utils.ts`) may now be analyzed.
+- **`unsafe_type_assertion` guidance no longer recommends chained assertions**: The `fix` field previously told users to `Use 'as unknown as TargetType'`, which conflicted with the broadened `unsafe_double_type_assertion` rule. The new guidance advocates a migration-first strategy with runtime validation.
+- **Multiline suppression anchored to the `any` token line**: Suppression checks for multiline `as any` assertions now evaluate the line containing the `any` keyword, not the outer `as` expression line. Inline suppressions on the `any` line work correctly.
+
 ## [1.0.28] - 2026-07-27
 
 ### Added
