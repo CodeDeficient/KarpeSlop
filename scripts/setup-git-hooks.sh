@@ -10,6 +10,8 @@ case "$hooks_path" in
 esac
 target="$hooks_dir/pre-push"
 
+mkdir -p "$hooks_dir"
+
 if [ -e "$target" ] || [ -L "$target" ]; then
   printf 'Refusing to replace existing hook: %s\n' "$target" >&2
   printf 'Chain %s into that hook manually; do not rerun this setup script.\n' "$repo_root/.githooks/pre-push" >&2
