@@ -5,6 +5,7 @@ All notable changes will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- `elided_code_comment` checks block and JSX comments (`{/* ... other fields */}`), not only `//` comments, and recognizes more wordings ("Add more cases as needed", "[existing code here]", "Handle other actions similarly", "omitted for brevity"). A wording counts only when it is the whole comment, so prose that mentions "the other fields" is not reported.
 - `empty_catch` skips a catch that falls through to a fallback: the `try` block returns, and code after the `try` (or the next loop iteration) handles the failure. zod and ky use this pattern; it was reported at high severity.
 - SECURITY.md lists the npm registry requests a scan makes and how to turn them off, and gives a real contact for vulnerability reports. It used to say the tool made no network requests.
 - `--quiet` matches core folders at any depth, so `packages/ui/src/` in a monorepo is scanned. Before, only folders at the repository root counted and a monorepo scanned no files.

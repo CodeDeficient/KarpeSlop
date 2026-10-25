@@ -459,11 +459,26 @@ const PLACEHOLDER_COMMENT = new RegExp([
 
 const NOT_IMPLEMENTED_MESSAGE = /not\s+(yet\s+)?implemented|implement\s+me|^todo\b/i;
 
+/**
+ * Comments that stand in for code that was left out. Matched on the comment's
+ * whole text, so ordinary prose that mentions "the rest of the props" is not
+ * caught. A bare "..." counts only outside a multi-line comment block,
+ * where it can be a continuation of the previous line.
+ */
+const ELIDED_ELLIPSIS = /^[[(]?\s*(\.\.\.|…)\s*[\])]?$/;
 const ELIDED_COMMENT = new RegExp([
-  String.raw`^(\.\.\.|…)$`,
-  String.raw`^(\.\.\.|…)\s*\(?\s*(the\s+)?(rest|existing|other|remaining|previous|more|same|your|additional)\b`,
-  String.raw`^(\.\.\.|…)?\s*\(?(rest\s+of|remaining)\s+(the\s+)?(code|implementation|logic|file|component|function|class|methods?|props|fields|properties|handlers?|cases|routes|config)\b`,
-  String.raw`^(\.\.\.|…)?\s*\(?(existing|other|previous)\s+(code|implementation|logic|methods?|imports|props|fields|properties|handlers?|cases|routes|config)\s*(remains?\s+)?(unchanged|stays?\s+the\s+same|as\s+(before|is))`
+  // "...existing code...", "... (more routes)"
+  String.raw`^[[(]?\s*(\.\.\.|…)\s*[[(]?\s*(the\s+)?(rest|existing|other|remaining|previous|more|same|your|additional)\b`,
+  // "rest of the checkout form", "remaining handlers"
+  String.raw`^(\.\.\.|…)?\s*[[(]?\s*(the\s+)?(rest|remainder)\s+of\b(?!.*\b(is|are|was|were)\b)[^.]{0,40}$`,
+  String.raw`^(\.\.\.|…)?\s*[[(]?\s*remaining\s+\w+(\s+\w+)?\s*(\.\.\.|…)?\s*[\])]?$`,
+  // "existing code here", "other methods remain the same", "handle other actions similarly"
+  String.raw`^(\.\.\.|…)?\s*[[(]?\s*(\w+\s+)?(existing|previous|original|other|remaining|same|more)\s+(\w+\s+){0,2}?(code|logic|implementation|methods?|functions?|fields?|props|properties|handlers?|cases|routes|actions|imports|config|options|steps|styles?|components?|elements|items|endpoints)(\s+\w+){0,2}?\s+(here|unchanged|remains?(\s+(unchanged|the\s+same))?|stays?(\s+the\s+same)?|the\s+same|as\s+(before|is)|omitted|similarly|go(es)?\s+here|as\s+needed)\s*(\.\.\.|…)?\s*[\])]?\.?$`,
+  // "add more cases as needed", "implement the remaining endpoints similarly"
+  String.raw`^(add|insert|include|handle|implement|repeat)\s+(more|other|additional|remaining|the\s+other|the\s+remaining)\s+\w+(\s+\w+)?\s+(here|as\s+needed|similarly|if\s+needed|the\s+same\s+way)\b`,
+  // "implementation omitted for brevity", but not "stack traces are omitted for brevity in logs"
+  String.raw`^(?!.*\b(is|are|was|were|be|been)\b)(\.\.\.|…)?\s*[[(]?\s*(\w+\s+){0,3}(omitted|truncated|elided|skipped)\s+for\s+brevity\s*(\.\.\.|…)?\s*[\])]?\.?$`,
+  String.raw`^(etc\.?|and\s+so\s+on\.?)$`
 ].join('|'), 'i');
 
 const HEDGING_COMMENT = /\b(should\s+(hopefully\s+)?work|hopefully|might\s+work|not\s+sure\s+(if|why|whether|this|that|how)|i\s+think|i\s+believe|fingers\s+crossed|for\s+some\s+reason)\b/i;
@@ -897,6 +912,8 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     const comment = comments[index];
     const body = comment.body;
     const inPlaceholder = placeholderBodies.some(block => rangeContains(block, comment.pos));
+    const nextIsComment = index + 1 < comments.length && comments[index + 1].line === comment.line + 1;
+    const previousIsComment = index > 0 && comments[index - 1].line === comment.line - 1;
 
     if (TS_SUPPRESSION.test(body)) {
       reportComment('ts_suppression', comment);
@@ -908,7 +925,9 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
     if (DIRECTIVE_COMMENT.test(body)) continue;
 
-    if (comment.isLineComment && ELIDED_COMMENT.test(body)) {
+    const isDocComment = comment.raw.startsWith('/**');
+    const inCommentBlock = nextIsComment || previousIsComment;
+    if (!isDocComment && (ELIDED_COMMENT.test(body) || (!inCommentBlock && ELIDED_ELLIPSIS.test(body)))) {
       reportComment('elided_code_comment', comment);
       continue;
     }
@@ -927,8 +946,6 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
 
     // A one-line comment on its own line, directly above a single statement,
     // that only repeats words from that statement.
-    const nextIsComment = index + 1 < comments.length && comments[index + 1].line === comment.line + 1;
-    const previousIsComment = index > 0 && comments[index - 1].line === comment.line - 1;
     if (comment.isLineComment && comment.ownLine && !nextIsComment && !previousIsComment &&
       !EXPLAINING_WORDS.test(body) && isRestatingComment(sourceFile, comment)) {
       reportComment('restating_comment', comment);
