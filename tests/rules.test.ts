@@ -377,12 +377,15 @@ test('any: generic constraints, conditional extends and fully erased generics ar
 
 test('casts: a cast of a value whose shape is known is an ordinary type_assertion', () => {
   for (const code of ['const keys = Object.keys(types) as Array<keyof typeof types>;', 'const list = [] as User[];',
-    'const map = {} as Record<string, number>;', 'const e = Object.entries(o) as [Key, number][];']) {
+    'const map = {} as Record<string, number>;', 'const names = Object.getOwnPropertyNames(o) as Key[];']) {
     assert.deepEqual(typesIn(code), ['type_assertion'], code);
   }
   assert.deepEqual(typesIn('const users = JSON.parse(raw) as User[];'), ['unsafe_array_assertion']);
   assert.deepEqual(typesIn('const cfg = load() as Record<string, string>;'), ['unsafe_object_assertion']);
   assert.deepEqual(typesIn('const one = [x] as User[];'), ['unsafe_array_assertion']);
+  // Values can be any (`Object.entries(o: {})` returns [string, any][]), so casting them is unchecked.
+  assert.deepEqual(typesIn('const e = Object.entries(o) as [Key, number][];'), ['unsafe_array_assertion']);
+  assert.deepEqual(typesIn('const v = Object.values(o) as number[];'), ['unsafe_array_assertion']);
 });
 
 test('casts: every cast is reported, `as const` and `as unknown` are not', () => {

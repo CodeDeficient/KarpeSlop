@@ -422,7 +422,7 @@ function hasKnownShape(expr: ts.Expression): boolean {
   if (ts.isObjectLiteralExpression(inner)) return inner.properties.length === 0;
   return ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) &&
     ts.isIdentifier(inner.expression.expression) && inner.expression.expression.text === 'Object' &&
-    ['keys', 'entries', 'values', 'getOwnPropertyNames', 'fromEntries'].includes(inner.expression.name.text);
+    ['keys', 'getOwnPropertyNames'].includes(inner.expression.name.text);
 }
 
 /** Classify one cast. Chained casts report the chain, plus `as any` when it ends in any. */
