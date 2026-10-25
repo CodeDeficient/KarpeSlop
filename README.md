@@ -28,7 +28,7 @@ npx karpeslop@latest
 | `placeholder_implementation` | high | A body that returns a constant (or nothing) under a TODO or placeholder comment; a short body under a comment that says the real code is elsewhere ("Simulate API call", "In a real app you would..."); a body that only logs and returns success; or `throw new Error("Not implemented")` |
 | `elided_code_comment` | high | `// ... rest of the code`, `// ...existing code...`, `{/* ... other fields */}`, `// Add more cases as needed` and similar, in line, block and JSX comments |
 | `placeholder_value` | high | `"YOUR_API_KEY"`, `"<your-token>"`, `"Bearer <API_KEY>"`, `"sk-xxxxxx"`, `"postgres://user:password@..."`, an `example.com` URL stored in config, and a hard-coded fallback for a secret (`process.env.JWT_SECRET \|\| "secret"`) |
-| `empty_catch` | high | `catch {}` or `.catch(() => {})` with no comment explaining why. Not reported when the `try` returns and code after it is the fallback (`try { return parse(x) } catch {}` then a default) |
+| `empty_catch` | high | `catch {}` or `.catch(() => {})` with no comment explaining why and no `_`-named binding. Not reported when the `try` returns and code after it is the fallback (`try { return parse(x) } catch {}` then a default) |
 | `swallowed_error` | medium | A `catch` block that only logs (`console.error('Failed', err)`) and lets execution continue as if nothing failed |
 | `unsafe_type_assertion` | high | `as any` |
 | `unsafe_double_type_assertion` | high | `as unknown as T` and other chained casts |
