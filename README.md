@@ -42,7 +42,7 @@ npx karpeslop@latest
 | `hedging_comment` | low | "should work", "hopefully", "not sure if" |
 | `restating_comment` | low | `// Set loading to true` above `setLoading(true)` |
 | `filler_comment` | low | `@param id - the id`, `@returns the result`, "This function is used to..." |
-| `todo_comment` | low | TODO / FIXME / HACK |
+| `todo_comment` | low | TODO / FIXME / HACK that does not link a tracking issue (a URL, `#123` or `PROJ-123`) |
 | `production_console_log` | low | `console.log/debug/info` outside tests and CLI scripts |
 | `fresh_package_version` | medium | A dependency version published within `minPackageAgeDays` (default 7). New releases are where typosquats and compromised versions usually land |
 

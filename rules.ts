@@ -518,6 +518,9 @@ const HEDGING_COMMENT = /\b(should\s+(hopefully\s+)?work|hopefully|might\s+work|
 
 const TODO_COMMENT = /^\W*(TODO|FIXME|HACK|XXX)\b/;
 
+/** Points at a tracking issue: a URL, `#123`, `JIRA-123` or "issue 123". */
+const TRACKED_REFERENCE = /https?:\/\/|(^|[\s(])#\d+\b|\b(?!(UTF|SHA|ES|ISO|RFC|AES|RSA|HMAC|MD|TLS|SSL|HTTP|IPV|ECMA|PEP|UTC|GMT|BASE)-)[A-Z][A-Z0-9]+-\d+\b|\b([Ii]ssue|[Tt]icket|[Bb]ug)\s+#?\d+/;
+
 const TS_SUPPRESSION = /^\s*@ts-(ignore|nocheck)\b/;
 
 const BLANKET_ESLINT = /^\s*eslint-disable(-next-line|-line)?\s*(--.*)?$/;
@@ -1140,7 +1143,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       reportComment('elided_code_comment', comment);
       continue;
     }
-    if (!inPlaceholder && TODO_COMMENT.test(body)) {
+    if (!inPlaceholder && TODO_COMMENT.test(body) && !TRACKED_REFERENCE.test(body)) {
       reportComment('todo_comment', comment);
       continue;
     }
