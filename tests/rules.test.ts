@@ -518,6 +518,39 @@ test('checkImports: names re-exported with export { } from are checked', async (
   }
 });
 
+test('checkImports: a subpath an installed package does not have is reported', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app', dependencies: { lib: '1.0.0', mapped: '1.0.0' } }),
+    'node_modules/lib/package.json': JSON.stringify({ name: 'lib', main: 'index.js' }),
+    'node_modules/lib/index.js': 'module.exports = {};\n',
+    'node_modules/lib/debounce.js': 'module.exports = {};\n',
+    'node_modules/lib/dist/style.css': '',
+    'node_modules/lib/parse.internal.js': '',
+    'node_modules/mapped/package.json': JSON.stringify({ name: 'mapped', exports: { '.': './index.js', './locale/*': './dist/locale/*.js', './legacy/': './lib/', './a*a': './x.js' } }),
+    'src/a.js': [
+      "import debounce from 'lib/debounce';",
+      "import 'lib/dist/style.css';",
+      "import { debounceAsync } from 'lib/debounceAsync';",
+      "import fr from 'mapped/locale/fr';",
+      "import x from 'mapped/missing';",
+      "import old from 'mapped/legacy/thing';",
+      "import aa from 'mapped/a';",
+      "import parse from 'lib/parse';"
+    ].join('\n') + '\n'
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/a.js')], dir, registry);
+    assert.deepEqual(findings.map(f => [f.type, f.line, f.message]), [
+      ['hallucinated_import', 3, "'lib' has no module 'debounceAsync'."],
+      ['hallucinated_import', 5, "'mapped' has no module 'missing'."],
+      ['hallucinated_import', 7, "'mapped' has no module 'a'."],
+      ['hallucinated_import', 8, "'lib' has no module 'parse'."]
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: undeclared and nonexistent packages', async () => {
   const dir = makeProject({
     ...fakeReact,

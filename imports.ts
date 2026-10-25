@@ -110,6 +110,9 @@ interface PackageScope {
   declared: Set<string>;
 }
 
+/** The extension part of a module file name: `.js`, `.d.ts`, `.cjs`, `.json` and so on. */
+const MODULE_EXTENSION = /^(\.d)?\.[cm]?[jt]sx?$|^\.(json|node|wasm)$/;
+
 class PackageIndex {
   private manifestCache = new Map<string, Record<string, unknown> | undefined>();
   private scopeCache = new Map<string, PackageScope>();
@@ -149,13 +152,50 @@ class PackageIndex {
   }
 
   isInstalled(fromDir: string, packageName: string): boolean {
+    return this.installedDir(fromDir, packageName) !== undefined;
+  }
+
+  /** The nearest `node_modules/<packageName>` folder from `fromDir` upward. */
+  installedDir(fromDir: string, packageName: string): string | undefined {
     let dir = fromDir;
     while (true) {
-      if (fs.existsSync(path.join(dir, 'node_modules', packageName))) return true;
+      const candidate = path.join(dir, 'node_modules', packageName);
+      if (fs.existsSync(candidate)) return candidate;
       const parent = path.dirname(dir);
-      if (parent === dir) return false;
+      if (parent === dir) return undefined;
       dir = parent;
     }
+  }
+
+  /**
+   * False only when an installed package clearly has no such subpath: no
+   * file or folder by that name (with any extension), and no matching key in
+   * its `exports` map, including `*` patterns and folder mappings.
+   */
+  hasSubpath(packageDir: string, subpath: string): boolean {
+    const target = path.join(packageDir, subpath);
+    const folder = path.dirname(target);
+    const base = path.basename(target);
+    try {
+      // `foo` resolves to `foo.js` or `foo.d.ts`, not to a sibling such as `foo.internal.js`.
+      if (fs.readdirSync(folder).some(entry => entry === base ||
+        (entry.startsWith(`${base}.`) && MODULE_EXTENSION.test(entry.slice(base.length))))) return true;
+    } catch {
+      // The folder itself is missing; the exports map can still provide the subpath.
+    }
+    const exportsField = readJsonObject(path.join(packageDir, 'package.json'))?.exports;
+    if (typeof exportsField !== 'object' || exportsField === null) return false;
+    return Object.keys(exportsField).some(key => {
+      if (!key.startsWith('./')) return false;
+      const wanted = `./${subpath}`;
+      // Legacy folder mappings: `"./lib/": "./lib/"`.
+      if (key.endsWith('/')) return wanted.startsWith(key);
+      const star = key.indexOf('*');
+      if (star === -1) return key === wanted;
+      const prefix = key.slice(0, star);
+      const suffix = key.slice(star + 1);
+      return wanted.length >= prefix.length + suffix.length && wanted.startsWith(prefix) && wanted.endsWith(suffix);
+    });
   }
 }
 
@@ -356,6 +396,17 @@ export async function checkImports(
           };
           findings.push(finding);
           pendingRegistry.push({ finding, packageName });
+        }
+        // An installed package with no such entry point: `lodash-es/debounceAsync`.
+        const packageDir = specifier === packageName ? undefined : packages.installedDir(fileDir, packageName);
+        const subpath = specifier.slice(packageName.length + 1);
+        if (packageDir !== undefined && subpath !== '' && !packages.hasSubpath(packageDir, subpath)) {
+          findings.push({
+            type: 'hallucinated_import',
+            ...where,
+            code: `'${specifier}'`,
+            message: `'${packageName}' has no module '${subpath}'.`
+          });
         }
       }
 
