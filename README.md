@@ -126,5 +126,3 @@ Run `./scripts/setup-git-hooks.sh` once after cloning to add a pre-push hook tha
 ## License
 
 [MIT](LICENSE)
-
-If KarpeSlop helps you, you can support it on [GitHub Sponsors](https://github.com/sponsors/CodeDeficient).

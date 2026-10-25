@@ -51,9 +51,5 @@
     "readme": "https://github.com/CodeDeficient/karpeslop#readme",
     "contIntegration": "https://github.com/CodeDeficient/karpeslop/actions",
     "developmentStatus": "active",
-    "isAccessibleForFree": true,
-    "funder": {
-        "@type": "Person",
-        "url": "https://github.com/sponsors/CodeDeficient"
-    }
+    "isAccessibleForFree": true
 }
