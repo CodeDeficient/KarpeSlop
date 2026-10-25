@@ -916,15 +916,29 @@ function declaresName(sourceFile: ts.SourceFile, name: string): boolean {
   return found;
 }
 
+/** A `return` in this block or its nested blocks, not in a nested function. */
+function containsReturn(block: ts.Block): boolean {
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found || ts.isFunctionLike(node)) return;
+    if (ts.isReturnStatement(node)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(block, visit);
+  return found;
+}
+
 /**
- * `try { return parse(x); } catch {}` followed by more code: the catch falls
- * through to a fallback (the code after the try, or the next loop iteration),
+ * `try { return parse(x); } catch {}` followed by more code (the `return` may
+ * sit on a fast path inside the try): the catch falls through to a fallback (the code after the try, or the next loop iteration),
  * so the error is handled by design rather than swallowed.
  */
 function isFallbackCatch(clause: ts.CatchClause): boolean {
   const tryStatement = clause.parent;
-  const last = tryStatement.tryBlock.statements.at(-1);
-  if (last === undefined || !ts.isReturnStatement(last)) return false;
+  if (!containsReturn(tryStatement.tryBlock)) return false;
   let current: ts.Node = tryStatement;
   while (!ts.isFunctionLike(current.parent) && !ts.isSourceFile(current)) {
     const parent = current.parent;
