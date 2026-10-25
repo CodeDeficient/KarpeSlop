@@ -549,10 +549,15 @@ const PLACEHOLDER_VALUE_PATTERNS: readonly RegExp[] = [
   /^(insert|replace|put|enter|paste|add)[_-](with[_-])?(your|the)[_-][\w-]+$/i,
   /^(insert|replace|put|enter|paste|add)[_-]([a-z0-9]+[_-])*(api[_-]?key|key|token|secret|password|id|url)[_-]here$/i,
   /^(sk|pk|rk|ghp|xox[abp])[-_]?(x{6,}|\.{3,}|\*{6,})/i,
-  /^(xxx{2,}|changeme|change[_-]me|replace[_-]?me)$/i,
+  // sk_test_your_stripe_secret_key_here, pk_live_your_key
+  /^(sk|pk|rk)[-_](test|live)[-_](your|my)[_-]/i,
+  /[_-]your[_-][\w-]*[_-]here$/i,
+  /^(changeme|change[_-]me|replace[_-]?me)$/i,
   // Credentials and domains that are templates: postgres://user:password@..., you@yourdomain.com
-  /:\/\/(user(name)?|admin|root|db_?user):(password|pass|secret|changeme|pwd)@/i,
+  /:\/\/[\w.-]+:(password|pass|secret|changeme|pwd)@/i,
   /[@.](your[-_]?(domain|company|app|project|site|org))\.(com|org|net|io|co|dev|app)\b/i,
+  // https://your-project.supabase.co
+  /^[a-z]+:\/\/your[-_][\w-]*\./i,
   // https://hooks.slack.com/services/XXX/YYY/ZZZ
   /^https?:\/\/\S*\/(X{3,}|x{3,}|Y{3,}|Z{3,})(?=[/?#&]|$)/
 ];
@@ -597,15 +602,26 @@ function readsSecretEnv(expr: ts.Expression): boolean {
   return isSecretEnvRead(expr);
 }
 
-/** The literal is stored (a variable, property or default), not passed to a call. */
-function isStoredValue(literal: ts.Node): boolean {
+/** The declaration the literal is stored in (a variable, property or default), or undefined when it is passed to a call. */
+function storedIn(literal: ts.Node): ts.NamedDeclaration | undefined {
   let parent = literal.parent;
   while (ts.isBinaryExpression(parent) || ts.isParenthesizedExpression(parent) || ts.isTemplateSpan(parent) ||
     ts.isConditionalExpression(parent) || ts.isAsExpression(parent) || ts.isSatisfiesExpression(parent)) {
     parent = parent.parent;
   }
   return ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent) || ts.isParameter(parent) ||
-    ts.isPropertyDeclaration(parent) || ts.isBindingElement(parent);
+    ts.isPropertyDeclaration(parent) || ts.isBindingElement(parent)
+    ? parent
+    : undefined;
+}
+
+/** `'xxxx'` is a placeholder only where a secret goes; elsewhere it is often a format token (date-fns `XXXX`). */
+const MASKED_VALUE = /^x{3,}$/i;
+const SECRET_NAME = /(key|token|secret|password|passwd|auth|credential)/i;
+
+function isMaskedSecret(literal: ts.StringLiteralLike): boolean {
+  const name = storedIn(literal)?.name;
+  return MASKED_VALUE.test(literal.text) && name !== undefined && SECRET_NAME.test(name.getText());
 }
 
 const RESTATING_STOPWORDS = new Set([
@@ -1205,7 +1221,8 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
           message: 'Secret falls back to a hard-coded value when the environment variable is not set.',
           fix: 'Fail at startup when the variable is missing instead of using a default.'
         });
-      } else if (PLACEHOLDER_VALUE_PATTERNS.some(pattern => pattern.test(value)) || (EXAMPLE_URL.test(value) && isStoredValue(node))) {
+      } else if (PLACEHOLDER_VALUE_PATTERNS.some(pattern => pattern.test(value)) || isMaskedSecret(node) ||
+        (EXAMPLE_URL.test(value) && storedIn(node) !== undefined)) {
         report('placeholder_value', node);
       }
     }

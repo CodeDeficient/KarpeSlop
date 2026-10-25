@@ -281,6 +281,20 @@ test('placeholder values in more forms are reported', () => {
   assert.equal(countOf("const API = 'https://api.example.com' as const;", 'placeholder_value'), 1);
 });
 
+test('placeholder values copied from setup guides are reported', () => {
+  for (const value of ['sk_test_your_stripe_secret_key_here', 'pk_live_your_publishable_key', 'whsec_your_webhook_secret_here',
+    'postgresql://postgres:password@localhost:5432/mydb', 'https://your-project.supabase.co']) {
+    assert.equal(countOf(`const v = '${value}';`, 'placeholder_value'), 1, value);
+  }
+});
+
+test('a run of x is a placeholder only where a secret is stored', () => {
+  assert.equal(countOf("const apiKey = 'xxxxxxxx';", 'placeholder_value'), 1);
+  assert.equal(countOf("const cfg = { authToken: 'XXXX' };", 'placeholder_value'), 1);
+  assert.equal(countOf("switch (token) { case 'XXXX': return fmt(4); case 'xxxxx': return fmt(5); }", 'placeholder_value'), 0);
+  assert.equal(countOf("const pattern = 'XXXX';", 'placeholder_value'), 0);
+});
+
 test('a hard-coded fallback for a secret environment variable is reported', () => {
   assert.equal(countOf("const s = process.env.SESSION_PASSWORD ?? 'supersecretpassword';", 'placeholder_value'), 1);
   assert.equal(countOf("const s = import.meta.env.VITE_API_KEY || 'abc';", 'placeholder_value'), 1);
