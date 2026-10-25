@@ -187,6 +187,11 @@ export function exitCodeFor(issues: ReadonlyArray<Pick<AISlopIssue, 'type' | 'se
   return issues.some(issue => issue.type !== 'fresh_package_version' && SEVERITIES.indexOf(issue.severity) <= threshold) ? 1 : 0;
 }
 
+/** A path.relative() result outside the root: `../x`, or on Windows a path on another drive (`D:\\x`). */
+export function leavesRoot(relativePath: string): boolean {
+  return relativePath === '..' || /^\.\.[\\/]/.test(relativePath) || path.isAbsolute(relativePath);
+}
+
 /**
  * Determine whether a file path should be excluded from analysis.
  *
@@ -198,17 +203,21 @@ export function exitCodeFor(issues: ReadonlyArray<Pick<AISlopIssue, 'type' | 'se
  */
 export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRoot: boolean = false): boolean {
   const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
-  const isOutsideRoot = relativePath.startsWith('..');
-  const pathToMatch = allowOutsideRoot && isOutsideRoot
+  const matchesAbsolute = allowOutsideRoot && leavesRoot(relativePath);
+  const pathToMatch = matchesAbsolute
     ? path.resolve(filePath).replace(/\\/g, '/')
     : relativePath;
 
   const segments = pathToMatch.split('/');
   const excludedSegment = (name: string) => segments.includes(name);
-  const base = pathToMatch === relativePath ? rootDir : '/';
+  // An absolute path outside the root starts with its own root (`/home`, `C:`), so it is joined
+  // as is. The trailing `/` keeps the filesystem root (`''`, `C:`) from becoming the current directory.
+  const folderAt = (index: number) => matchesAbsolute
+    ? `${segments.slice(0, index).join('/')}/`
+    : path.join(rootDir, ...segments.slice(0, index));
   const isOutputFolder = (segment: string, index: number) => ['build', 'out', 'temp'].includes(segment) &&
     index < segments.length - 1 &&
-    (index === 0 || fs.existsSync(path.join(base, ...segments.slice(0, index), 'package.json')));
+    (index === 0 || fs.existsSync(path.join(folderAt(index), 'package.json')));
   return excludedSegment('generated') ||
     excludedSegment('coverage') ||
     excludedSegment('.next') ||
@@ -528,12 +537,12 @@ class AISlopDetector {
    */
   private isNonProductionFile(filePath: string): boolean {
     const relativePath = path.relative(this.rootDir, filePath);
-    return relativePath.startsWith('..') ? isNonProductionPath(path.basename(filePath)) : isNonProductionPath(relativePath);
+    return leavesRoot(relativePath) ? isNonProductionPath(path.basename(filePath)) : isNonProductionPath(relativePath);
   }
 
   private isIgnoredByConfig(filePath: string): boolean {
     const relativePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
-    if (relativePath.startsWith('..')) {
+    if (leavesRoot(relativePath)) {
       return false;
     }
 
