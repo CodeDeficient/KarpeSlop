@@ -104,7 +104,7 @@ There are no inline suppression comments. A comment that silences the linter is 
 
 - Syntax rules don't use type information. `type_assertion` reports every cast, including ones a careful author made on purpose; tune it with `severityOverrides`.
 - The named-import check only covers modules with TypeScript declarations. Exports inferred from plain JavaScript are skipped rather than guessed.
-- An import that matches a `paths` alias, a folder under `baseUrl` or `src`, or a name quoted in a bundler config is treated as an internal alias. It is never sent to the npm registry, so a missing package with the same name as one of these goes unreported.
+- An import that matches a `paths` alias, a Deno import map entry (`deno.json` `imports`), a folder under `baseUrl` or `src`, or a name quoted in a bundler config is treated as an internal alias. It is never sent to the npm registry, so a missing package with the same name as one of these goes unreported.
 - Comment rules are heuristics. They are low severity for that reason and never fail a run.
 - KarpeSlop complements ESLint and `tsc`; it doesn't replace them. Run all three.
 
