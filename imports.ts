@@ -352,8 +352,10 @@ class ResolutionIndex {
     for (const base of baseDirs) {
       if (typeof base === 'string' && fs.existsSync(path.join(base, first))) return true;
     }
-    const text = this.bundlerConfigText(fileDir);
-    return text.includes(`'${first}`) || text.includes(`"${first}`) || text.includes(`\`${first}`);
+    // The whole quoted name, or a path under it: `'@components'`, `"~/lib"`. A
+    // longer name that starts the same way (`'zod-mini'` for `zod`) is not it.
+    const quoted = new RegExp(`['"\`]${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"\`/]`);
+    return quoted.test(this.bundlerConfigText(fileDir));
   }
 }
 

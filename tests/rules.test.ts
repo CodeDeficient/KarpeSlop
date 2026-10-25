@@ -802,6 +802,20 @@ test('checkImports: aliases from a nested tsconfig or a bundler config are not p
   }
 });
 
+test('checkImports: a bundler config name that only starts like the import is not an alias', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app', dependencies: { 'vite-plugin-pwa': '1.0.0' } }),
+    'vite.config.ts': "import { VitePWA } from 'vite-plugin-pwa';\nexport default { resolve: { alias: { '~': '/src' } } };\n",
+    'src/a.ts': "import { x } from 'vite-plugin';\nimport { y } from '~/lib/y';\n"
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/a.ts')], dir, registry);
+    assert.deepEqual(findings.map(f => [f.type, f.line]), [['undeclared_dependency', 1]]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: paths from a solution-style tsconfig\'s references are honored', async () => {
   const dir = makeProject({
     'package.json': JSON.stringify({ name: 'app' }),
