@@ -1,0 +1,876 @@
+/**
+ * Built-in KarpeSlop rules and the per-file syntax analysis that runs them.
+ *
+ * Every rule here works on the TypeScript AST (or on real comment ranges taken
+ * from it), never on raw lines, so string contents, JSX text and code split
+ * across lines are handled the same way the compiler sees them.
+ *
+ * Import checks that need module resolution live in imports.ts.
+ */
+
+import ts from 'typescript';
+
+export type Severity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface RuleInfo {
+  id: string;
+  severity: Severity;
+  /** One-line statement of what was found. Neutral: says nothing about who wrote it. */
+  message: string;
+  /** Why it matters, or what to check. */
+  why: string;
+  /** Only present when the fix is certain and mechanical. */
+  fix?: string;
+  learnMore?: string;
+  /** Not reported in test, spec or mock files. */
+  skipTests?: boolean;
+}
+
+export interface Finding {
+  type: string;
+  line: number;
+  column: number;
+  code: string;
+  /** Overrides the rule message when the finding has specifics (e.g. the symbol name). */
+  message?: string;
+  fix?: string;
+}
+
+export const RULES: readonly RuleInfo[] = [
+  {
+    id: 'hallucinated_import',
+    severity: 'critical',
+    message: 'Imported name is not exported by the module.',
+    why: 'This import fails at build time or is undefined at runtime.',
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/modules/reference.html'
+  },
+  {
+    id: 'nonexistent_package',
+    severity: 'critical',
+    message: 'Imported package does not exist on the npm registry.',
+    why: 'Names that models invent are a known target for package squatting. Do not install a package with this name without checking who published it.',
+    fix: 'Remove the import and use a package you have verified.'
+  },
+  {
+    id: 'undeclared_dependency',
+    severity: 'high',
+    message: 'Imported package is not declared in package.json and is not installed.',
+    why: 'The import cannot resolve on a clean install.',
+    fix: 'Add the package to package.json if it is the one you meant, or remove the import.'
+  },
+  {
+    id: 'placeholder_implementation',
+    severity: 'high',
+    message: 'Function body is a placeholder.',
+    why: 'The function returns a dummy value or throws instead of doing its job, so callers get wrong results without an error.',
+    skipTests: true
+  },
+  {
+    id: 'elided_code_comment',
+    severity: 'high',
+    message: 'Comment stands in for code that was left out ("... rest of code").',
+    why: 'Code was elided, usually when a snippet was pasted from a chat answer. Whatever it stood for is missing.',
+    fix: 'Restore the omitted code or delete the comment if nothing is missing.'
+  },
+  {
+    id: 'placeholder_value',
+    severity: 'high',
+    message: 'String literal is a placeholder value (e.g. "YOUR_API_KEY").',
+    why: 'The real value was never filled in. It usually belongs in configuration or an environment variable.',
+    skipTests: true
+  },
+  {
+    id: 'empty_catch',
+    severity: 'high',
+    message: 'Error is caught and silently discarded.',
+    why: 'Failures here leave no trace. If ignoring the error is intended, say why in a comment inside the block.',
+    learnMore: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch',
+    skipTests: true
+  },
+  {
+    id: 'unsafe_type_assertion',
+    severity: 'high',
+    message: "Value is cast to 'any'.",
+    why: 'The cast turns off type checking for every later use of the value.',
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates',
+    skipTests: true
+  },
+  {
+    id: 'unsafe_double_type_assertion',
+    severity: 'high',
+    message: 'Value is cast through another type (e.g. "as unknown as T").',
+    why: 'A chained cast forces a conversion the compiler rejected. Validate the value at runtime or fix the source type instead.',
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#type-assertions',
+    skipTests: true
+  },
+  {
+    id: 'unsafe_object_assertion',
+    severity: 'high',
+    message: 'Value is cast to an object type.',
+    why: 'The compiler takes the shape on trust. If the value comes from outside the program (JSON, an API, storage), validate it instead.',
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
+    skipTests: true
+  },
+  {
+    id: 'unsafe_array_assertion',
+    severity: 'high',
+    message: 'Value is cast to an array type.',
+    why: 'The compiler takes the element type on trust. If the value comes from outside the program, validate it instead.',
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
+    skipTests: true
+  },
+  {
+    id: 'type_assertion',
+    severity: 'medium',
+    message: 'Value is cast to another type.',
+    why: 'The compiler takes the target type on trust. Prefer a type guard, a typed source, or "satisfies" when you only need to check the shape.',
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
+    skipTests: true
+  },
+  {
+    id: 'any_type_usage',
+    severity: 'medium',
+    message: "Type is declared as 'any'.",
+    why: "'any' turns off type checking wherever the value flows. 'unknown' keeps it on and forces a check before use.",
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
+    skipTests: true
+  },
+  {
+    id: 'ts_suppression',
+    severity: 'medium',
+    message: 'Type errors are suppressed with @ts-ignore or @ts-nocheck.',
+    why: 'The suppression hides the error permanently, including after the code around it changes.',
+    fix: "Use '// @ts-expect-error <reason>' for a single line; it fails once the error is gone.",
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-9.html#-ts-expect-error-comments'
+  },
+  {
+    id: 'blanket_eslint_disable',
+    severity: 'medium',
+    message: 'ESLint is disabled without naming a rule.',
+    why: 'Every lint rule is off for this scope, not just the one that fired.',
+    fix: 'Name the rule being disabled, e.g. "eslint-disable-next-line no-console".'
+  },
+  {
+    id: 'unchecked_fetch_response',
+    severity: 'medium',
+    message: 'fetch() response body is read without checking the HTTP status.',
+    why: 'fetch() only rejects on network failure. A 404 or 500 response is read as if it succeeded.',
+    fix: 'Check response.ok (or response.status) before reading the body.',
+    learnMore: 'https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#checking_response_status',
+    skipTests: true
+  },
+  {
+    id: 'non_null_assertion',
+    severity: 'low',
+    message: "Non-null assertion ('!') on a value.",
+    why: 'The compiler takes it on trust that the value is not null or undefined. Check it or narrow the type instead.',
+    learnMore: 'https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#non-null-assertion-operator-postfix-',
+    skipTests: true
+  },
+  {
+    id: 'hedging_comment',
+    severity: 'low',
+    message: 'Comment says the code is unverified ("should work", "hopefully").',
+    why: 'Check the behavior and record what you found, or add a test.',
+    skipTests: true
+  },
+  {
+    id: 'restating_comment',
+    severity: 'low',
+    message: 'Comment restates the next line of code.',
+    why: 'It repeats what the code already says. Comments are most useful when they explain why.',
+    skipTests: true
+  },
+  {
+    id: 'filler_comment',
+    severity: 'low',
+    message: 'Doc comment restates names ("@param id - the id", "@returns the result", "This function is used to ...").',
+    why: 'It adds length without information. Say what is not obvious from the name, or remove it.',
+    skipTests: true
+  },
+  {
+    id: 'todo_comment',
+    severity: 'low',
+    message: 'TODO/FIXME/HACK marker.',
+    why: 'Unfinished work. Link a tracking issue so it is not forgotten.'
+  },
+  {
+    id: 'production_console_log',
+    severity: 'low',
+    message: 'console.log/debug/info call in application code.',
+    why: 'Usually leftover debugging output. Use your logger if the output is intended.',
+    skipTests: true
+  }
+];
+
+const RULE_BY_ID = new Map(RULES.map(rule => [rule.id, rule]));
+
+export function getRule(id: string): RuleInfo | undefined {
+  return RULE_BY_ID.get(id);
+}
+
+export function isTestPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/');
+  return /(^|\/)(__tests__|__mocks__|tests?|spec|e2e|fixtures?)\//.test(normalized) ||
+    /\.(test|spec|stories|bench)(-d)?\.[cm]?[jt]sx?$/.test(normalized) ||
+    /(^|\/)test-[^/]*$/.test(normalized);
+}
+
+export function scriptKindFor(fileName: string): ts.ScriptKind {
+  if (fileName.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (fileName.endsWith('.jsx')) return ts.ScriptKind.JSX;
+  if (/\.[cm]?js$/.test(fileName)) return ts.ScriptKind.JS;
+  return ts.ScriptKind.TS;
+}
+
+// ---------------------------------------------------------------------------
+// Comments
+// ---------------------------------------------------------------------------
+
+export interface CommentInfo {
+  pos: number;
+  end: number;
+  /** Comment body without the comment markers. */
+  body: string;
+  raw: string;
+  line: number;
+  column: number;
+  isLineComment: boolean;
+  /** True when nothing but whitespace precedes the comment on its line. */
+  ownLine: boolean;
+}
+
+/**
+ * Collect every real comment in the file. Comments are trivia attached to
+ * tokens, so we read the trivia around every token (punctuation included, so
+ * a comment alone inside `{ }` is found) and de-duplicate. Ranges that fall
+ * inside JSX text are dropped because "//" there is not a comment.
+ */
+export function collectComments(sourceFile: ts.SourceFile): CommentInfo[] {
+  const text = sourceFile.text;
+  const byPos = new Map<number, ts.CommentRange>();
+  const jsxTextRanges: Array<[number, number]> = [];
+
+  const addRanges = (ranges: ts.CommentRange[] | undefined) => {
+    for (const range of ranges ?? []) {
+      byPos.set(range.pos, range);
+    }
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxText(node)) {
+      jsxTextRanges.push([node.pos, node.end]);
+      return;
+    }
+    addRanges(ts.getLeadingCommentRanges(text, node.pos));
+    addRanges(ts.getTrailingCommentRanges(text, node.end));
+    for (const child of node.getChildren(sourceFile)) visit(child);
+  };
+  visit(sourceFile);
+
+  for (const [pos, end] of jsxTextRanges) {
+    for (const commentPos of [...byPos.keys()]) {
+      if (commentPos >= pos && commentPos < end) byPos.delete(commentPos);
+    }
+  }
+
+  return [...byPos.values()]
+    .sort((a, b) => a.pos - b.pos)
+    .map(range => {
+      const raw = text.slice(range.pos, range.end);
+      const isLineComment = range.kind === ts.SyntaxKind.SingleLineCommentTrivia;
+      const body = isLineComment
+        ? raw.replace(/^\/\/+/, '')
+        : raw.replace(/^\/\*+/, '').replace(/\*+\/$/, '').replace(/^\s*\*/gm, '');
+      const { line, character } = sourceFile.getLineAndCharacterOfPosition(range.pos);
+      const lineStart = sourceFile.getPositionOfLineAndCharacter(line, 0);
+      return {
+        pos: range.pos,
+        end: range.end,
+        body: body.trim(),
+        raw,
+        line: line + 1,
+        column: character + 1,
+        isLineComment,
+        ownLine: text.slice(lineStart, range.pos).trim() === ''
+      };
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Type assertions
+// ---------------------------------------------------------------------------
+
+export interface UnsafeAssertionFinding {
+  type: string;
+  file: string;
+  line: number;
+  column: number;
+  code: string;
+  message: string;
+  severity: Severity;
+  assertionForm: string;
+}
+
+function isObjectTypeNode(type: ts.TypeNode): boolean {
+  // Syntax-only: matches by name, so a local type named Record would also match.
+  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    return type.typeName.text === 'Record';
+  }
+  return ts.isTypeLiteralNode(type);
+}
+
+function isArrayTypeNode(type: ts.TypeNode): boolean {
+  if (ts.isArrayTypeNode(type)) return true;
+  return ts.isTypeReferenceNode(type) &&
+    ts.isIdentifier(type.typeName) &&
+    (type.typeName.text === 'Array' || type.typeName.text === 'ReadonlyArray') &&
+    (type.typeArguments?.length ?? 0) > 0;
+}
+
+/** Casts that are not really type claims: `as const` and `<const>`. */
+function isConstAssertion(type: ts.TypeNode): boolean {
+  return ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) && type.typeName.text === 'const';
+}
+
+type AssertionNode = ts.AsExpression | ts.TypeAssertion;
+
+function isAssertion(node: ts.Node): node is AssertionNode {
+  return ts.isAsExpression(node) || ts.isTypeAssertionExpression(node);
+}
+
+/** A real cast: excludes `as const` (not a type claim) and `as unknown` (always safe). */
+function isCast(node: ts.Node): node is AssertionNode {
+  return isAssertion(node) && !isConstAssertion(node.type) && node.type.kind !== ts.SyntaxKind.UnknownKeyword;
+}
+
+export const UNSAFE_ASSERTION_TYPES = new Set([
+  'unsafe_double_type_assertion',
+  'unsafe_type_assertion',
+  'unsafe_object_assertion',
+  'unsafe_array_assertion'
+]);
+
+interface CastReport {
+  type: string;
+  form: string;
+  anchor: ts.Node;
+}
+
+/** Classify one cast. Chained casts report the chain, plus `as any` when it ends in any. */
+function classifyCast(node: AssertionNode): CastReport[] {
+  const isAny = node.type.kind === ts.SyntaxKind.AnyKeyword;
+  if (isAssertion(node.expression) && !isConstAssertion(node.expression.type)) {
+    const reports: CastReport[] = [{ type: 'unsafe_double_type_assertion', form: 'chained_as', anchor: node }];
+    // Report the trailing `as any` as well, so turning off the chained-cast
+    // rule does not hide it.
+    if (isAny) reports.push({ type: 'unsafe_type_assertion', form: 'as_any', anchor: node.type });
+    return reports;
+  }
+  if (isAny) return [{ type: 'unsafe_type_assertion', form: 'as_any', anchor: node.type }];
+  if (isObjectTypeNode(node.type)) return [{ type: 'unsafe_object_assertion', form: 'as_object', anchor: node }];
+  if (isArrayTypeNode(node.type)) return [{ type: 'unsafe_array_assertion', form: 'as_array', anchor: node }];
+  return [{ type: 'type_assertion', form: 'as_type', anchor: node }];
+}
+
+/**
+ * Find the unsafe casts in a TypeScript file: `as any`, chained casts, and
+ * casts to object or array types. Both `x as T` and `<T>x` forms count.
+ * Other casts are reported by analyzeSource as type_assertion.
+ */
+export function findUnsafeAssertions(sourceText: string, fileName: string): UnsafeAssertionFinding[] {
+  if (fileName.endsWith('.d.ts')) return [];
+
+  const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
+  const findings: UnsafeAssertionFinding[] = [];
+
+  const visit = (node: ts.Node) => {
+    if (isCast(node)) {
+      for (const cast of classifyCast(node)) {
+        if (!UNSAFE_ASSERTION_TYPES.has(cast.type)) continue;
+        const rule = getRule(cast.type);
+        const { line, character } = sourceFile.getLineAndCharacterOfPosition(cast.anchor.getStart(sourceFile));
+        findings.push({
+          type: cast.type,
+          file: fileName,
+          line: line + 1,
+          column: character + 1,
+          code: sourceText.slice(node.getStart(sourceFile), node.end),
+          message: rule?.message ?? cast.type,
+          severity: rule?.severity ?? 'high',
+          assertionForm: cast.form
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
+// Per-file analysis
+// ---------------------------------------------------------------------------
+
+const PLACEHOLDER_COMMENT = new RegExp([
+  String.raw`\bimplement(ation)?\s+(goes\s+|logic\s+)?here\b`,
+  String.raw`\byour\s+(own\s+)?(code|logic|implementation)\b`,
+  String.raw`\b(add|insert|put|write)\s+(your\s+|the\s+|actual\s+|real\s+)?(\w+\s+)?(logic|code|implementation)\s+here\b`,
+  String.raw`\bnot\s+(yet\s+)?implemented\b`,
+  String.raw`\bimplement\s+(this|me|later|properly)\b`,
+  String.raw`^(TODO|FIXME)\b.*\bimplement`,
+  String.raw`\bplaceholder\b`,
+  String.raw`\bstub(bed)?\b`
+].join('|'), 'i');
+
+const NOT_IMPLEMENTED_MESSAGE = /not\s+(yet\s+)?implemented|implement\s+me|^todo\b/i;
+
+const ELIDED_COMMENT = new RegExp([
+  String.raw`^(\.\.\.|…)$`,
+  String.raw`^(\.\.\.|…)\s*\(?\s*(the\s+)?(rest|existing|other|remaining|previous|more|same|your|additional)\b`,
+  String.raw`^(\.\.\.|…)?\s*\(?(rest\s+of|remaining)\s+(the\s+)?(code|implementation|logic|file|component|function|class|methods?|props|fields|properties|handlers?|cases|routes|config)\b`,
+  String.raw`^(\.\.\.|…)?\s*\(?(existing|other|previous)\s+(code|implementation|logic|methods?|imports|props|fields|properties|handlers?|cases|routes|config)\s*(remains?\s+)?(unchanged|stays?\s+the\s+same|as\s+(before|is))`
+].join('|'), 'i');
+
+const HEDGING_COMMENT = /\b(should\s+(hopefully\s+)?work|hopefully|might\s+work|not\s+sure\s+(if|why|whether|this|that|how)|i\s+think|i\s+believe|fingers\s+crossed|for\s+some\s+reason)\b/i;
+
+const TODO_COMMENT = /^\W*(TODO|FIXME|HACK|XXX)\b/;
+
+const TS_SUPPRESSION = /^\s*@ts-(ignore|nocheck)\b/;
+
+const BLANKET_ESLINT = /^\s*eslint-disable(-next-line|-line)?\s*(--.*)?$/;
+
+const FILLER_OPENING = /^(this|the\s+following)\s+(function|method|component|hook|class|variable|constant|helper|utility|module|file)\s+(is\s+used\s+to|is\s+responsible\s+for|serves\s+to|is\s+designed\s+to|will\s+be\s+used\s+to|is\s+a\s+(\w+\s+)?(function|method|component|hook|class)\s+that)\b/i;
+
+const FILLER_RETURN_WORDS = new Set(['the', 'a', 'an', 'result', 'results', 'value', 'values', 'return', 'returned', 'returns', 'data', 'response', 'output', 'promise']);
+
+const DIRECTIVE_COMMENT = /^\s*(@ts-|eslint|prettier|istanbul|c8\b|v8\b|webpack|@vite|@jsx|@refresh|#|global\b|jshint|tslint|biome-|oxlint-|deno-)/i;
+
+const PLACEHOLDER_VALUE_PATTERNS: readonly RegExp[] = [
+  /^<\s*your[\s_-][^>]+>$/i,
+  /^your[_-](\w+[_-])*(api[_-]?key|key|token|secret|password|passwd|url|uri|endpoint|id|domain|project|bucket|account|client|dsn|webhook)([_-]here)?$/i,
+  /^(insert|replace|put|enter|paste)[_-](with[_-])?(your|the)[_-][\w-]+$/i,
+  /^(sk|pk|rk|ghp|xox[abp])[-_]?(x{6,}|\.{3,}|\*{6,})/i,
+  /^(xxx+|changeme|change[_-]me|replace[_-]?me|fixme|todo)$/i
+];
+
+const RESTATING_STOPWORDS = new Set([
+  'the', 'a', 'an', 'to', 'of', 'and', 'or', 'for', 'with', 'in', 'on', 'from', 'by', 'at', 'as', 'into',
+  'this', 'that', 'it', 'its', 'is', 'are', 'be', 'we', 'our', 'new', 'value', 'values', 'variable',
+  'function', 'method', 'call', 'calls', 'set', 'sets', 'get', 'gets', 'create', 'creates', 'initialize',
+  'initializes', 'init', 'define', 'defines', 'declare', 'declares', 'store', 'stores', 'save', 'check',
+  'checks', 'if', 'then', 'else', 'increment', 'add', 'adds', 'update', 'updates', 'return', 'returns',
+  'make', 'makes', 'using', 'use', 'uses', 'via', 'all', 'each', 'list', 'array', 'object', 'state',
+  'current', 'given', 'provided', 'now', 'here', 'up', 'out', 'some', 'any', 'data'
+]);
+
+const EXPLAINING_WORDS = /\b(because|since|so\s+that|otherwise|why|note|hack|workaround|bug|issue|see|unless|until|avoid|prevent|ensure|must|need|needs|instead|only|always|never|keep|order|before|after)\b|[?:]|https?:/i;
+
+function splitWords(text: string): string[] {
+  return text
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function stem(word: string): string {
+  return word.length > 3 ? word.replace(/(ies|es|s)$/, '') : word;
+}
+
+/** A doc comment whose only content restates parameter names or opens with stock filler. */
+function isFillerComment(comment: CommentInfo): boolean {
+  if (FILLER_OPENING.test(comment.body)) return true;
+  if (comment.isLineComment) return false;
+  let tagLines = 0;
+  for (const line of comment.body.split('\n').map(text => text.trim())) {
+    const param = /^@param\s+(\{[^}]*\}\s*)?\[?([\w$.]+)[^\s]*\s*-?\s*(.*)$/.exec(line);
+    if (param !== null) {
+      const nameWords = new Set(splitWords(param[2]).map(stem));
+      const described = splitWords(param[3]).filter(word => !RESTATING_STOPWORDS.has(word));
+      if (described.length === 0 || described.some(word => !nameWords.has(stem(word)))) return false;
+      tagLines++;
+      continue;
+    }
+    const returns = /^@returns?\s+(\{[^}]*\}\s*)?(.*)$/.exec(line);
+    if (returns !== null) {
+      if (!splitWords(returns[2]).every(word => FILLER_RETURN_WORDS.has(word))) return false;
+      tagLines++;
+      continue;
+    }
+    // Any other tag carries information of its own. Summary lines are judged by FILLER_OPENING only.
+    if (line.startsWith('@')) return false;
+  }
+  return tagLines > 0;
+}
+
+function isTrivialExpression(expr: ts.Expression | undefined): boolean {
+  if (expr === undefined) return true;
+  if (ts.isParenthesizedExpression(expr)) return isTrivialExpression(expr.expression);
+  if (ts.isNumericLiteral(expr) || ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return true;
+  if (ts.isIdentifier(expr)) return expr.text === 'undefined';
+  if (ts.isArrayLiteralExpression(expr)) return expr.elements.length === 0;
+  if (ts.isObjectLiteralExpression(expr)) return expr.properties.length === 0;
+  return expr.kind === ts.SyntaxKind.NullKeyword ||
+    expr.kind === ts.SyntaxKind.TrueKeyword ||
+    expr.kind === ts.SyntaxKind.FalseKeyword;
+}
+
+function isNotImplementedThrow(statement: ts.Statement): boolean {
+  if (!ts.isThrowStatement(statement)) return false;
+  const thrown = statement.expression;
+  if (!ts.isNewExpression(thrown) && !ts.isCallExpression(thrown)) return false;
+  const first = thrown.arguments?.[0];
+  return first !== undefined &&
+    (ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first)) &&
+    NOT_IMPLEMENTED_MESSAGE.test(first.text);
+}
+
+function isTrivialStatement(statement: ts.Statement): boolean {
+  if (ts.isReturnStatement(statement)) return isTrivialExpression(statement.expression);
+  if (ts.isThrowStatement(statement)) return true;
+  if (ts.isEmptyStatement(statement)) return true;
+  // Leftover "unused parameter" silencers: `void x;` or `console.log(x);`
+  if (ts.isExpressionStatement(statement)) {
+    const expr = statement.expression;
+    if (ts.isVoidExpression(expr)) return true;
+    return ts.isCallExpression(expr) && isConsoleCall(expr, /^(log|debug|info|warn)$/);
+  }
+  return false;
+}
+
+function isConsoleCall(call: ts.CallExpression, methods: RegExp): boolean {
+  const callee = call.expression;
+  return ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === 'console' &&
+    methods.test(callee.name.text);
+}
+
+function isFunctionWithBody(node: ts.Node): node is ts.FunctionLikeDeclaration & { body: ts.Block } {
+  return (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node)) &&
+    node.body !== undefined && ts.isBlock(node.body);
+}
+
+/**
+ * `Query<any, any, any>`: every type argument erased to any. This is the usual
+ * way to say "some instantiation of this generic" (TypeScript has no
+ * existential types), not a missing type.
+ */
+function isErasedGenericArgument(node: ts.Node): boolean {
+  const parent = node.parent;
+  if (!ts.isTypeReferenceNode(parent) && !ts.isExpressionWithTypeArguments(parent)) return false;
+  const args = parent.typeArguments ?? [];
+  return args.length >= 2 && args.every(arg => arg.kind === ts.SyntaxKind.AnyKeyword);
+}
+
+/** True when the `any` keyword sits in a generic constraint/default or a conditional type's `extends` clause. */
+function isAnyInTypeLevelPattern(node: ts.Node): boolean {
+  let child: ts.Node = node;
+  let current: ts.Node | undefined = node.parent;
+  while (current !== undefined) {
+    if (ts.isTypeParameterDeclaration(current)) return true;
+    if (ts.isConditionalTypeNode(current) && child === current.extendsType) return true;
+    if (ts.isInferTypeNode(current)) return true;
+    if (!ts.isTypeNode(current) && !ts.isParameter(current) && !ts.isTypeElement(current) &&
+      !ts.isTypeParameterDeclaration(current)) {
+      return false;
+    }
+    child = current;
+    current = current.parent;
+  }
+  return false;
+}
+
+function rangeContains(outer: ts.Node, pos: number): boolean {
+  return pos >= outer.pos && pos < outer.end;
+}
+
+/** Name bound to a fetch() response, for `const res = await fetch()` / `.then(res => ...)`. */
+function isFetchCall(node: ts.Node): node is ts.CallExpression {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = node.expression;
+  if (ts.isIdentifier(callee)) return callee.text === 'fetch';
+  return ts.isPropertyAccessExpression(callee) &&
+    callee.name.text === 'fetch' &&
+    ts.isIdentifier(callee.expression) &&
+    (callee.expression.text === 'window' || callee.expression.text === 'globalThis' || callee.expression.text === 'self');
+}
+
+const BODY_READERS = new Set(['json', 'text', 'blob', 'arrayBuffer', 'formData', 'bytes']);
+
+function unwrapAwait(expr: ts.Expression): ts.Expression {
+  let current = expr;
+  while (ts.isAwaitExpression(current) || ts.isParenthesizedExpression(current)) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/**
+ * Inspect how a response identifier is used inside `scope`.
+ * Status is "checked" if `.ok`/`.status` is read or the response is handed to
+ * another function (which may check it).
+ */
+function responseUsage(scope: ts.Node, name: string): { readsBody: ts.Node | undefined; checked: boolean } {
+  let readsBody: ts.Node | undefined;
+  let checked = false;
+  const visit = (node: ts.Node) => {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === name) {
+      const member = node.name.text;
+      if (member === 'ok' || member === 'status') checked = true;
+      if (BODY_READERS.has(member) && ts.isCallExpression(node.parent) && node.parent.expression === node) {
+        readsBody = readsBody ?? node.parent;
+      }
+    }
+    if (ts.isCallExpression(node) && node.arguments.some(arg => ts.isIdentifier(arg) && arg.text === name)) {
+      checked = true;
+    }
+    if ((ts.isReturnStatement(node) && node.expression !== undefined && ts.isIdentifier(node.expression) && node.expression.text === name)) {
+      checked = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return { readsBody, checked };
+}
+
+/** True when the file declares its own binding with this name (variable, function, parameter or import). */
+function declaresName(sourceFile: ts.SourceFile, name: string): boolean {
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found) return;
+    if ((ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isParameter(node) ||
+      ts.isImportSpecifier(node) || ts.isImportClause(node) || ts.isNamespaceImport(node)) &&
+      node.name !== undefined && ts.isIdentifier(node.name) && node.name.text === name) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+
+function enclosingFunctionOrFile(node: ts.Node): ts.Node {
+  let current: ts.Node | undefined = node.parent;
+  while (current !== undefined) {
+    if (ts.isFunctionLike(current) || ts.isSourceFile(current)) return current;
+    current = current.parent;
+  }
+  return node.getSourceFile();
+}
+
+export interface AnalyzeOptions {
+  isTestFile: boolean;
+  isCliFile: boolean;
+}
+
+/**
+ * Run every syntax-level rule on one file. Test-file skips and severity
+ * overrides are applied by the caller. There is deliberately no inline
+ * suppression comment: the only way to silence a rule is a reviewed
+ * severityOverrides entry in .karpesloprc.json.
+ */
+export function analyzeSource(sourceText: string, fileName: string): Finding[] {
+  const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
+  const comments = collectComments(sourceFile);
+  const findings: Finding[] = [];
+  const isTypeScript = /\.[cm]?tsx?$/.test(fileName);
+
+  const positionOf = (pos: number) => {
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(pos);
+    return { line: line + 1, column: character + 1 };
+  };
+  const snippet = (node: ts.Node, max = 120) => {
+    const text = sourceText.slice(node.getStart(sourceFile), node.end).replace(/\s+/g, ' ');
+    return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  };
+  const report = (type: string, node: ts.Node, extra: Partial<Finding> = {}) => {
+    findings.push({ type, ...positionOf(node.getStart(sourceFile)), code: snippet(node), ...extra });
+  };
+  const reportComment = (type: string, comment: CommentInfo) => {
+    findings.push({ type, line: comment.line, column: comment.column, code: comment.raw.split('\n')[0].trim() });
+  };
+
+  // Comments that sit inside a placeholder body are reported once, as the placeholder.
+  const placeholderBodies: ts.Block[] = [];
+  const anyLines = new Set<number>();
+  const fetchIsShadowed = declaresName(sourceFile, 'fetch');
+
+  const visit = (node: ts.Node) => {
+    if (isFunctionWithBody(node)) {
+      const body = node.body;
+      const inner = comments.filter(c => c.pos > body.pos && c.end < body.end);
+      const statements = body.statements;
+      const allTrivial = statements.length <= 2 && statements.every(isTrivialStatement);
+      const commentSaysPlaceholder = inner.some(c => PLACEHOLDER_COMMENT.test(c.body));
+      const throwsNotImplemented = statements.length === 1 && isNotImplementedThrow(statements[0]);
+      if ((commentSaysPlaceholder && allTrivial) || throwsNotImplemented) {
+        placeholderBodies.push(body);
+        const anchor = node.name ?? node;
+        findings.push({
+          type: 'placeholder_implementation',
+          ...positionOf(anchor.getStart(sourceFile)),
+          code: snippet(node, 100)
+        });
+      }
+    }
+
+    if (ts.isCatchClause(node) && node.block.statements.length === 0 &&
+      !comments.some(c => c.pos > node.block.pos && c.end < node.block.end)) {
+      report('empty_catch', node);
+    }
+
+    // promise.catch(() => {})
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'catch' && node.arguments.length === 1) {
+      const handler = node.arguments[0];
+      if ((ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) && ts.isBlock(handler.body) &&
+        handler.body.statements.length === 0 &&
+        !comments.some(c => c.pos > handler.body.pos && c.end < handler.body.end)) {
+        report('empty_catch', node.expression.name);
+      }
+    }
+
+    if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      !ts.isJsxAttribute(node.parent) &&
+      !ts.isImportDeclaration(node.parent) && !ts.isExportDeclaration(node.parent) &&
+      !ts.isLiteralTypeNode(node.parent) &&
+      PLACEHOLDER_VALUE_PATTERNS.some(pattern => pattern.test(node.text.trim()))) {
+      report('placeholder_value', node);
+    }
+
+    if (node.kind === ts.SyntaxKind.AnyKeyword && isTypeScript && !isAnyInTypeLevelPattern(node) &&
+      !isAssertion(node.parent) && !isErasedGenericArgument(node)) {
+      // One finding per line: `(data: any) => any` is one decision, not two.
+      const { line } = positionOf(node.getStart(sourceFile));
+      if (!anyLines.has(line)) {
+        anyLines.add(line);
+        report('any_type_usage', node);
+      }
+    }
+
+    // Unsafe casts come from findUnsafeAssertions; every other cast is reported here.
+    if (isCast(node) && isTypeScript && classifyCast(node).every(cast => cast.type === 'type_assertion')) {
+      report('type_assertion', node);
+    }
+
+    if (ts.isNonNullExpression(node)) {
+      report('non_null_assertion', node);
+    }
+
+    if (ts.isCallExpression(node) && isConsoleCall(node, /^(log|debug|info|trace|dir|table)$/)) {
+      report('production_console_log', node.expression);
+    }
+
+    if (isFetchCall(node) && !(fetchIsShadowed && ts.isIdentifier(node.expression))) {
+      checkFetchResponse(node);
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  const checkFetchResponse = (call: ts.CallExpression) => {
+    // `await (await fetch(url)).json()` — the body is read with no chance to check status.
+    let outer: ts.Node = call;
+    while (ts.isAwaitExpression(outer.parent) || ts.isParenthesizedExpression(outer.parent)) {
+      outer = outer.parent;
+    }
+    const parent = outer.parent;
+    if (ts.isPropertyAccessExpression(parent) && BODY_READERS.has(parent.name.text)) {
+      report('unchecked_fetch_response', call);
+      return;
+    }
+
+    // const res = await fetch(url); ... res.json()
+    if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name) && parent.initializer !== undefined &&
+      unwrapAwait(parent.initializer) === call) {
+      const usage = responseUsage(enclosingFunctionOrFile(parent), parent.name.text);
+      if (usage.readsBody !== undefined && !usage.checked) report('unchecked_fetch_response', call);
+      return;
+    }
+
+    // fetch(url).then(res => res.json())
+    if (ts.isPropertyAccessExpression(parent) && parent.name.text === 'then' &&
+      ts.isCallExpression(parent.parent) && parent.parent.arguments.length > 0) {
+      const handler = parent.parent.arguments[0];
+      if ((ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) && handler.parameters.length > 0) {
+        const param = handler.parameters[0].name;
+        if (ts.isIdentifier(param)) {
+          const usage = responseUsage(handler.body, param.text);
+          if (usage.readsBody !== undefined && !usage.checked) report('unchecked_fetch_response', call);
+        }
+      }
+    }
+  };
+
+  visit(sourceFile);
+
+  // Comment rules
+  for (let index = 0; index < comments.length; index++) {
+    const comment = comments[index];
+    const body = comment.body;
+    const inPlaceholder = placeholderBodies.some(block => rangeContains(block, comment.pos));
+
+    if (TS_SUPPRESSION.test(body)) {
+      reportComment('ts_suppression', comment);
+      continue;
+    }
+    if (BLANKET_ESLINT.test(body)) {
+      reportComment('blanket_eslint_disable', comment);
+      continue;
+    }
+    if (DIRECTIVE_COMMENT.test(body)) continue;
+
+    if (comment.isLineComment && ELIDED_COMMENT.test(body)) {
+      reportComment('elided_code_comment', comment);
+      continue;
+    }
+    if (!inPlaceholder && TODO_COMMENT.test(body)) {
+      reportComment('todo_comment', comment);
+      continue;
+    }
+    if (HEDGING_COMMENT.test(body)) {
+      reportComment('hedging_comment', comment);
+      continue;
+    }
+    if (isFillerComment(comment)) {
+      reportComment('filler_comment', comment);
+      continue;
+    }
+
+    // A one-line comment on its own line, directly above a single statement,
+    // that only repeats words from that statement.
+    const nextIsComment = index + 1 < comments.length && comments[index + 1].line === comment.line + 1;
+    const previousIsComment = index > 0 && comments[index - 1].line === comment.line - 1;
+    if (comment.isLineComment && comment.ownLine && !nextIsComment && !previousIsComment &&
+      !EXPLAINING_WORDS.test(body) && isRestatingComment(sourceFile, comment)) {
+      reportComment('restating_comment', comment);
+    }
+  }
+
+  return findings;
+}
+
+function isRestatingComment(sourceFile: ts.SourceFile, comment: CommentInfo): boolean {
+  const words = splitWords(comment.body);
+  if (words.length === 0 || words.length > 6) return false;
+  const content = words.filter(word => !RESTATING_STOPWORDS.has(word));
+  if (content.length === 0) return false;
+
+  const nextLineIndex = comment.line; // 0-based index of the following line
+  if (nextLineIndex >= sourceFile.getLineStarts().length) return false;
+  const start = sourceFile.getLineStarts()[nextLineIndex];
+  const end = nextLineIndex + 1 < sourceFile.getLineStarts().length
+    ? sourceFile.getLineStarts()[nextLineIndex + 1]
+    : sourceFile.text.length;
+  const nextLine = sourceFile.text.slice(start, end).trim();
+  if (nextLine === '' || nextLine.startsWith('//') || nextLine.startsWith('/*') || nextLine === '}') return false;
+
+  const codeWords = new Set(splitWords(nextLine).map(stem));
+  return content.every(word => codeWords.has(stem(word)));
+}
