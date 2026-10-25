@@ -271,7 +271,7 @@ test('placeholder credentials are reported', () => {
 });
 
 test('placeholder values in more forms are reported', () => {
-  for (const value of ['<API_KEY>', 'Bearer <API_KEY>', 'INSERT_API_KEY_HERE', 'postgres://user:password@localhost:5432/app',
+  for (const value of ['<API_KEY>', 'Bearer <API_KEY>', 'INSERT_API_KEY_HERE', 'postgres://user:password@localhost:5432/app', 'mysql://me%40corp:password@db/app',
     'noreply@yourdomain.com', 'https://hooks.slack.com/services/XXX/YYY/ZZZ']) {
     assert.equal(countOf(`const v = '${value}';`, 'placeholder_value'), 1, value);
   }
@@ -279,6 +279,27 @@ test('placeholder values in more forms are reported', () => {
   assert.equal(countOf("export const cfg = { baseUrl: 'https://example.org' };", 'placeholder_value'), 1);
   assert.equal(countOf("const API = dev ? 'http://localhost:3000' : 'https://api.example.com';", 'placeholder_value'), 1);
   assert.equal(countOf("const API = 'https://api.example.com' as const;", 'placeholder_value'), 1);
+});
+
+test('placeholder values copied from setup guides are reported', () => {
+  for (const value of ['sk_test_your_stripe_secret_key_here', 'pk_live_your_publishable_key', 'whsec_your_webhook_secret_here',
+    'postgresql://postgres:password@localhost:5432/mydb', 'https://your-project.supabase.co']) {
+    assert.equal(countOf(`const v = '${value}';`, 'placeholder_value'), 1, value);
+  }
+});
+
+test('a run of x is a placeholder only where a secret is stored', () => {
+  assert.equal(countOf("const apiKey = 'xxxxxxxx';", 'placeholder_value'), 1);
+  assert.equal(countOf("const cfg = { authToken: 'XXXX' };", 'placeholder_value'), 1);
+  assert.equal(countOf("switch (token) { case 'XXXX': return fmt(4); case 'xxxxx': return fmt(5); }", 'placeholder_value'), 0);
+  assert.equal(countOf("const pattern = 'XXXX';", 'placeholder_value'), 0);
+  // A secret word must be a word of the name, not part of one.
+  assert.equal(countOf("const monkey = 'xxxx'; const author = 'XXXX';", 'placeholder_value'), 0);
+  assert.equal(countOf("const API_KEY = 'XXXX'; const credentials = { pass: 1, authorization: 'xxxx' };", 'placeholder_value'), 2);
+  assert.equal(countOf("const APIToken = 'XXXX'; const JWTSecret = 'xxxx'; const cfg = { accesstoken: 'xxxx', secretkey: 'XXXX' };", 'placeholder_value'), 4);
+  assert.equal(countOf("const c = { clientsecret: 'xxxx', DBPASSWORD: 'xxxx', refreshtoken: 'xxxx', apiKey2: 'xxxx' };", 'placeholder_value'), 4);
+  assert.equal(countOf("const c = { turkey: 'xxxx', hockey: 'xxxx', keyboard: 'xxxx' };", 'placeholder_value'), 0);
+  assert.equal(countOf("const apiKey = `${'XXXX'}`;", 'placeholder_value'), 1);
 });
 
 test('a hard-coded fallback for a secret environment variable is reported', () => {
