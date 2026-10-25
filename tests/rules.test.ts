@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { analyzeSource, isTestPath } from '../rules.ts';
+import { analyzeSource, findUnsafeAssertions, isTestPath } from '../rules.ts';
 import { checkImports, isBarePackageSpecifier, type RegistryLookup } from '../imports.ts';
 
 function typesIn(code: string, fileName = 'sample.ts'): string[] {
@@ -129,6 +129,14 @@ test('casts: cast-like text in strings and comments is not code', () => {
 test('casts: parenthesized chains count as chained casts, reported once', () => {
   assert.deepEqual(typesIn('const y = (x as unknown) as Foo;'), ['unsafe_double_type_assertion']);
   assert.deepEqual(typesIn('const y = x as A as B;'), ['unsafe_double_type_assertion']);
+});
+
+test('casts: parenthesized chains ending in any, nested chains, and plain parentheses', () => {
+  assert.deepEqual(typesIn('const y = (x as unknown) as any;'), ['unsafe_double_type_assertion', 'unsafe_type_assertion']);
+  assert.deepEqual(typesIn('const y = ((x as A) as B) as C;'), ['unsafe_double_type_assertion', 'unsafe_double_type_assertion']);
+  assert.deepEqual(typesIn('const y = (x as A) as B as C;'), ['unsafe_double_type_assertion', 'unsafe_double_type_assertion']);
+  assert.deepEqual(typesIn('const y = (x) as any;'), ['unsafe_type_assertion']);
+  assert.deepEqual(findUnsafeAssertions('const y = (x as A) as B;', 'x.ts').map(cast => cast.assertionForm), ['chained_as']);
 });
 
 test('non-null assertions are reported', () => {
