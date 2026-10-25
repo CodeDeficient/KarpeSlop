@@ -8,7 +8,7 @@ Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript 
 
 ### Upgrading from 1.x
 - Remove `severityOverrides` entries for the removed rule ids listed below. They are ignored now. The replacement ids are listed next to each removed rule.
-- CI that fails on any finding should expect exit 1 only for medium severity and above.
+- CI that fails on any finding should expect exit 1 only for medium severity and above. `--strict` still exits 2 on critical findings.
 - Anything that read the slop score from the output should read the per-severity counts instead.
 
 ### Breaking
