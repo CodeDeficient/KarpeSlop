@@ -522,7 +522,8 @@ class AISlopDetector {
     this.issues.sort((a, b) =>
       SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
       a.file.localeCompare(b.file) ||
-      a.line - b.line);
+      a.line - b.line ||
+      a.column - b.column);
 
     this.generateReport();
     return this.issues;

@@ -1312,7 +1312,8 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
 
     if (ts.isNonNullExpression(node) && isTypeScript) {
-      report('non_null_assertion', node);
+      // At the `!` itself, so `a()!.b!` gives two findings at two columns.
+      findings.push({ type: 'non_null_assertion', ...positionOf(node.end - 1), code: snippet(node) });
     }
 
     if (ts.isCallExpression(node) && isConsoleCall(node, /^(log|debug|info|trace|dir|table)$/)) {

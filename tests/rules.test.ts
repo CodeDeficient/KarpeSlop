@@ -375,6 +375,11 @@ test('any: generic constraints, conditional extends and fully erased generics ar
   assert.equal(countOf('type F = (x: any, ...rest: unknown[]) => void;', 'any_type_usage'), 1);
 });
 
+test('non-null assertions are reported at the ! so chained ones get distinct columns', () => {
+  const findings = analyzeSource('const t = document.getElementById(id)!.textContent!;\n', 'sample.ts').filter(f => f.type === 'non_null_assertion');
+  assert.deepEqual(findings.map(f => f.column).sort((a, b) => a - b), [38, 51]);
+});
+
 test('casts: a cast of a value whose shape is known is an ordinary type_assertion', () => {
   for (const code of ['const keys = Object.keys(types) as Array<keyof typeof types>;', 'const list = [] as User[];',
     'const map = {} as Record<string, number>;', 'const names = Object.getOwnPropertyNames(o) as Key[];']) {
