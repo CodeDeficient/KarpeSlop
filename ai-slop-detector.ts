@@ -188,7 +188,6 @@ export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRo
     excludedSegment('.git') ||
     excludedSegment('out') ||
     excludedSegment('temp') ||
-    excludedSegment('types') ||
     segments.some(segment => segment.startsWith('.')) ||
     pathToMatch.endsWith('.d.ts');
 }
@@ -420,7 +419,6 @@ class AISlopDetector {
       'generated/**',
       '.vercel/**',
       '.git/**',
-      '**/types/**',
       '**/node_modules/**',
       '**/.*',
       '**/*.d.ts',

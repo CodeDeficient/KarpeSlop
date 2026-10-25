@@ -59,6 +59,14 @@ test('isExcludedPath uses segment-based matching so dist anywhere in path is exc
   assert.equal(isExcludedPath('/repo/src/components/Button.tsx', rootDir), false);
 });
 
+test('isExcludedPath scans hand-written types/ folders but still skips .d.ts files', () => {
+  const rootDir = '/repo';
+
+  assert.equal(isExcludedPath('/repo/src/types/user.ts', rootDir), false);
+  assert.equal(isExcludedPath('/repo/types/api.ts', rootDir), false);
+  assert.equal(isExcludedPath('/repo/src/types/global.d.ts', rootDir), true);
+});
+
 test('isExcludedPath with allowOutsideRoot preserves targets outside repo root', () => {
   const rootDir = '/repo';
 
