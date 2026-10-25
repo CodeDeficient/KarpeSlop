@@ -743,7 +743,7 @@ function unwrapAwait(expr: ts.Expression): ts.Expression {
 /**
  * Inspect how a response identifier is used inside `scope`.
  * Status is "checked" if `.ok`/`.status` is read or the response is handed to
- * another function (which may check it).
+ * another function (which may check it). A console call is not a check.
  */
 function responseUsage(scope: ts.Node, name: string): { readsBody: ts.Node | undefined; checked: boolean } {
   let readsBody: ts.Node | undefined;
@@ -756,7 +756,9 @@ function responseUsage(scope: ts.Node, name: string): { readsBody: ts.Node | und
         readsBody = readsBody ?? node.parent;
       }
     }
-    if (ts.isCallExpression(node) && node.arguments.some(arg => ts.isIdentifier(arg) && arg.text === name)) {
+    // Handing the response to another function may check it; logging it does not.
+    if (ts.isCallExpression(node) && !isConsoleCall(node, /./) &&
+      node.arguments.some(arg => ts.isIdentifier(arg) && arg.text === name)) {
       checked = true;
     }
     if (ts.isReturnStatement(node) && node.expression !== undefined && ts.isIdentifier(node.expression) && node.expression.text === name) {
