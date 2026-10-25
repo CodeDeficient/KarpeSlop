@@ -1,4 +1,3 @@
-# Ensure binary files use LF line endings even on Windows
+# Use LF line endings for scripts and docs so the CLI shebang works on Windows checkouts
 *.js text eol=lf
 *.md text eol=lf
-karpeslop-bin.js text eol=lf

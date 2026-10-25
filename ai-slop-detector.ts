@@ -200,9 +200,8 @@ export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRo
     excludedSegment('.git') ||
     excludedSegment('out') ||
     excludedSegment('temp') ||
-    excludedSegment('types') ||
     segments.some(segment => segment.startsWith('.')) ||
-    pathToMatch.endsWith('.d.ts');
+    /\.d\.[cm]?ts$/.test(pathToMatch);
 }
 
 function isCliPath(filePath: string, content: string): boolean {
@@ -432,10 +431,11 @@ class AISlopDetector {
       'generated/**',
       '.vercel/**',
       '.git/**',
-      '**/types/**',
       '**/node_modules/**',
       '**/.*',
       '**/*.d.ts',
+      '**/*.d.mts',
+      '**/*.d.cts',
       '**/coverage/**',
       '**/out/**',
       '**/temp/**',

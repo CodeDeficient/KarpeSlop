@@ -3,6 +3,9 @@
 
 set -eu
 
+# Read Git's ref-update records once, so a chained hook gets the same input.
+input=$(cat)
+
 while read -r local_ref local_oid remote_ref remote_oid; do
   case "$remote_ref" in
     refs/heads/main|refs/heads/master)
@@ -10,6 +13,22 @@ while read -r local_ref local_oid remote_ref remote_oid; do
       exit 1
       ;;
   esac
-done
+done <<RECORDS
+$input
+RECORDS
+
+# An existing pre-push hook, moved to pre-push.local, runs after the guard
+# with the original input. It never runs before the guard, so it cannot
+# consume the records the guard needs.
+local_hook="$(dirname "$0")/pre-push.local"
+if [ -e "$local_hook" ] || [ -L "$local_hook" ]; then
+  if [ ! -x "$local_hook" ]; then
+    printf '%s\n' "Push blocked: $local_hook is not executable or is a broken link." >&2
+    exit 1
+  fi
+  # Restore the trailing newline that $(cat) dropped; empty input stays empty.
+  printf '%s' "${input:+$input
+}" | "$local_hook" "$@"
+fi
 
 exit 0
