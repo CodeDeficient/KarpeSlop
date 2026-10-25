@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- `fresh_package_version` skips packages the scanned workspace publishes itself (any `name` in a scanned package.json) and lockfile entries that link a workspace folder. TanStack Query got 184 warnings for `@tanstack/*` versions it had just released.
 - Folders named `build`, `out` or `temp` are skipped only at the scan root or next to a package.json, where they hold build output. Deeper ones are often source: Next.js keeps its build pipeline in `packages/next/src/build/`, which was never scanned.
 - A run whose paths are all missing, ignored or unsupported ends with a one-line error instead of a stack trace.
 - An unknown command-line option stops the run with exit 1 and names the option. `--stirct` used to run without strict mode. A `severityOverrides` key that is not a rule id or custom pattern id prints a warning: `type_asertion: "off"` used to do nothing, silently.
