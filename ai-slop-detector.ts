@@ -238,6 +238,9 @@ function isCliPath(filePath: string, content: string): boolean {
   return /(^|\/)(bin|scripts|cli)\//.test(normalized) || /(^|[-_.])cli\.[cm]?[jt]sx?$/.test(path.basename(normalized));
 }
 
+/** A .karpesloprc.json that cannot be read or does not validate. */
+export class ConfigError extends Error {}
+
 class AISlopDetector {
   private issues: AISlopIssue[] = [];
   private targetExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs'];
@@ -393,7 +396,8 @@ class AISlopDetector {
         this.customIgnorePaths = this.config.ignorePaths ?? [];
         break; // Stop after finding first valid config
       } catch (error) {
-        console.warn(`Failed to parse config at ${configPath}:`, error);
+        // Running with defaults would silently drop the user's overrides and ignore paths.
+        throw new ConfigError(`Invalid config at ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
@@ -1045,7 +1049,14 @@ async function runIfMain() {
     process.exit(0);
   }
 
-  const detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
+  let detector: AISlopDetector;
+  try {
+    detector = new AISlopDetector(rootDir, targetPaths.length > 0 ? targetPaths : undefined);
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    console.error(`KarpeSlop: ${error.message}`);
+    process.exit(1);
+  }
   const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
   const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || detector.getConfig().blockOnCritical === true;
 
