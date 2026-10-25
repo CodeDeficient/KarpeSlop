@@ -147,13 +147,18 @@ export async function pLimit<T>(
   return results;
 }
 
+/**
+ * Core folders count at any depth, so `packages/ui/src/` in a monorepo is
+ * scanned like `src/` at the root.
+ */
 export function shouldAnalyzePathInQuietMode(filePath: string, rootDir: string, coreAppDirs: readonly string[]): boolean {
   const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
   const base = path.basename(filePath);
   if (base === 'package.json' || base === 'package-lock.json') {
     return true;
   }
-  return coreAppDirs.some(dir => relativePath.startsWith(dir));
+  const folders = relativePath.split('/').slice(0, -1);
+  return coreAppDirs.some(dir => folders.includes(dir.replace(/\/$/, '')));
 }
 
 export function isRegistryBackedLockfileEntry(pkgPath: string): boolean {
@@ -972,7 +977,7 @@ Arguments:
 
 Options:
   --help, -h     Show this help message
-  --quiet, -q    Scan only core app directories (app/, components/, lib/, hooks/, services/, src/), skip tests
+  --quiet, -q    Scan only core app directories (app/, components/, lib/, hooks/, services/, src/, at any depth), skip tests
   --strict, -s   Exit with code 2 if critical findings (wrong imports, nonexistent packages) are present
   --version, -v  Show version information
   --             End of flags; treat remaining args as paths (even if they start with -)
