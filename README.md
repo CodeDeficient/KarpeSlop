@@ -29,6 +29,7 @@ npx karpeslop@latest
 | `elided_code_comment` | high | `// ... rest of the code`, `// ...existing code...`, `{/* ... other fields */}`, `// Add more cases as needed` and similar, in line, block and JSX comments |
 | `placeholder_value` | high | `"YOUR_API_KEY"`, `"<your-token>"`, `"sk-xxxxxx"` and similar |
 | `empty_catch` | high | `catch {}` or `.catch(() => {})` with no comment explaining why. Not reported when the `try` returns and code after it is the fallback (`try { return parse(x) } catch {}` then a default) |
+| `swallowed_error` | medium | A `catch` block that only logs (`console.error('Failed', err)`) and lets execution continue as if nothing failed |
 | `unsafe_type_assertion` | high | `as any` |
 | `unsafe_double_type_assertion` | high | `as unknown as T` and other chained casts |
 | `unsafe_object_assertion` / `unsafe_array_assertion` | high | Casts to `Record<...>`, `{ ... }`, `T[]` |
