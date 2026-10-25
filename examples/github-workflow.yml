@@ -1,0 +1,90 @@
+# KarpeSlop workflow for GitHub Actions.
+# Copy this file to your project's .github/workflows/ directory.
+# It runs on pull requests to main, master or develop and comments on the PR
+# when the check fails. Pull requests from forks get a read-only token, so the
+# comment is skipped for them; the failed check and the report still show.
+
+name: KarpeSlop Check
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+
+jobs:
+  slop-check:
+    name: KarpeSlop
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Run KarpeSlop
+        run: npx karpeslop@latest --quiet --strict
+        continue-on-error: false
+      
+      - name: Upload Slop Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-slop-report
+          path: ai-slop-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Optional: Comment on PR with slop summary
+  comment-on-pr:
+    name: Comment Results
+    runs-on: ubuntu-latest
+    needs: slop-check
+    permissions:
+      pull-requests: write
+    if: github.event_name == 'pull_request' && failure() && github.event.pull_request.head.repo.full_name == github.repository
+    
+    steps:
+      # Missing when the run failed before the report was written.
+      - name: Download Slop Report
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: ai-slop-report
+      
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('ai-slop-report.json')) {
+              core.info('No KarpeSlop report: the check failed before writing one.');
+              return;
+            }
+            const report = JSON.parse(fs.readFileSync('ai-slop-report.json', 'utf8'));
+            
+            const body = `## KarpeSlop report
+            
+            | Severity | Count |
+            |----------|-------|
+            | Critical | ${report.bySeverity.critical} |
+            | High | ${report.bySeverity.high} |
+            | Medium | ${report.bySeverity.medium} |
+            | Low | ${report.bySeverity.low} |
+            
+            **Total Issues:** ${report.totalOccurrences}
+            
+            ${report.bySeverity.critical > 0 ? '❌ **BLOCKING:** Critical findings (imports or packages that do not exist)' : ''}
+            
+            See the full report in the Actions artifacts.`;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- The example GitHub workflow moved to `examples/github-workflow.yml`, and its PR-comment job asks for `pull-requests: write`, without which the comment could not be posted. This repository's own KarpeSlop check now scans its source with the checked-out code instead of the published package, which scanned no files here.
 - An invalid `.karpesloprc.json` stops the run with exit 1 and says what is wrong. It used to print a warning and scan with defaults, which silently dropped the project's severity overrides and ignore paths (KarpeSlop's own `swallowed_error` rule found this).
 - `hallucinated_import` reports a subpath an installed package does not have (`lodash-es/debounceAsync`): no file or folder by that name and no matching `exports` key, `*` patterns included.
 - `hallucinated_import` checks names re-exported with `export { a, b } from 'mod'`, not only imports.
