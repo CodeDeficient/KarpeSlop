@@ -81,6 +81,8 @@ interface KarpeSlopConfig {
 interface ScanSummary {
   filesScanned: number;
   linesScanned: number;
+  /** Lines outside test files: the denominator for finding density, since most rules skip tests. */
+  applicationLinesScanned: number;
 }
 
 function isSeverity(value: unknown): value is Severity {
@@ -252,7 +254,7 @@ class AISlopDetector {
   private registryUnavailable = false;
   private reportedFreshPackageKeys = new Set<string>();
   private targetPaths: string[] = [];
-  private summary: ScanSummary = { filesScanned: 0, linesScanned: 0 };
+  private summary: ScanSummary = { filesScanned: 0, linesScanned: 0, applicationLinesScanned: 0 };
   private lineCounts = new Map<string, number>();
 
   constructor(private rootDir: string, targetPaths?: string[], private registryLookup: RegistryLookup = npmRegistryLookup) {
@@ -434,9 +436,11 @@ class AISlopDetector {
     }
     await this.analyzeImports(codeFiles, quiet);
 
+    const linesIn = (files: string[]) => files.reduce((sum, file) => sum + (this.lineCounts.get(file) ?? 0), 0);
     this.summary = {
       filesScanned: codeFiles.length,
-      linesScanned: codeFiles.reduce((sum, file) => sum + (this.lineCounts.get(file) ?? 0), 0)
+      linesScanned: linesIn(codeFiles),
+      applicationLinesScanned: linesIn(codeFiles.filter(file => !this.isTestFile(file)))
     };
     this.issues.sort((a, b) =>
       SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
@@ -877,8 +881,12 @@ class AISlopDetector {
 
     const counts = SEVERITIES.map(severity => `${this.issues.filter(issue => issue.severity === severity).length} ${severity}`);
     const files = new Set(this.issues.map(issue => issue.file)).size;
-    const perKloc = linesScanned > 0 ? (this.issues.length / linesScanned) * 1000 : 0;
-    console.log(`${this.issues.length} finding${this.issues.length === 1 ? '' : 's'} (${counts.join(', ')}) in ${files} file${files === 1 ? '' : 's'}, ${perKloc.toFixed(1)} per 1,000 lines.`);
+    const { applicationLinesScanned } = this.summary;
+    const applicationFindings = this.issues.filter(issue => this.lineCounts.has(issue.file) && !this.isTestFile(issue.file)).length;
+    const density = applicationLinesScanned > 0
+      ? `, ${((applicationFindings / applicationLinesScanned) * 1000).toFixed(1)} per 1,000 lines of application code`
+      : '';
+    console.log(`${this.issues.length} finding${this.issues.length === 1 ? '' : 's'} (${counts.join(', ')}) in ${files} file${files === 1 ? '' : 's'}${density}.`);
     if (hasOnlyFreshPackageWarnings(this.issues)) {
       console.log('Only package-age warnings were found.');
     }
@@ -959,6 +967,7 @@ class AISlopDetector {
       timestamp: new Date().toISOString(),
       filesScanned: this.summary.filesScanned,
       linesScanned: this.summary.linesScanned,
+      applicationLinesScanned: this.summary.applicationLinesScanned,
       uniqueIssues: consolidatedIssues.length,
       totalOccurrences: countOccurrences(consolidatedIssues),
       bySeverity,
