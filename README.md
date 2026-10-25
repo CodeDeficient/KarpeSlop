@@ -33,7 +33,7 @@ npx karpeslop@latest
 | `unsafe_type_assertion` | high | `as any` |
 | `unsafe_double_type_assertion` | high | `as unknown as T` and other chained casts |
 | `unsafe_object_assertion` / `unsafe_array_assertion` | high | Casts to `Record<...>`, `{ ... }`, `T[]` |
-| `type_assertion` | medium | Any other cast (`as T`, `<T>x`). `as const` and `as unknown` are not casts |
+| `type_assertion` | low | Any other cast (`as T`, `<T>x`). `as const` and `as unknown` are not casts |
 | `any_type_usage` | medium | Declared `any`, once per line. Not reported in generic constraints, conditional `extends`, or fully erased generics like `Query<any, any, any>` |
 | `ts_suppression` | medium | `@ts-ignore`, `@ts-nocheck` |
 | `blanket_eslint_disable` | medium | `eslint-disable` without a rule name |
@@ -78,7 +78,7 @@ Create `.karpesloprc.json` in your project root:
 ```json
 {
   "severityOverrides": {
-    "type_assertion": "low",
+    "type_assertion": "medium",
     "production_console_log": "off"
   },
   "customPatterns": [
@@ -102,7 +102,7 @@ There are no inline suppression comments. A comment that silences the linter is 
 
 ## Limitations
 
-- Syntax rules don't use type information. `type_assertion` reports every cast, including ones a careful author made on purpose; tune it with `severityOverrides`.
+- Syntax rules don't use type information. `type_assertion` reports every cast, including ones a careful author made on purpose, so it is low severity and never fails a run. Raise it with `severityOverrides` if you want casts to fail CI.
 - The named-import check only covers modules with TypeScript declarations. Exports inferred from plain JavaScript are skipped rather than guessed.
 - An import that matches a `paths` alias, a folder under `baseUrl` or `src`, or a name quoted in a bundler config is treated as an internal alias. It is never sent to the npm registry, so a missing package with the same name as one of these goes unreported.
 - Comment rules are heuristics. They are low severity for that reason and never fail a run.

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { analyzeSource, findUnsafeAssertions, isFixturePath, isTestPath } from '../rules.ts';
+import { analyzeSource, findUnsafeAssertions, getRule, isFixturePath, isTestPath } from '../rules.ts';
 import { checkImports, isBarePackageSpecifier, type RegistryLookup } from '../imports.ts';
 
 function typesIn(code: string, fileName = 'sample.ts'): string[] {
@@ -229,6 +229,11 @@ test('any: generic constraints, conditional extends and fully erased generics ar
   assert.equal(countOf('type R<T> = T extends Promise<any> ? 1 : 0;', 'any_type_usage'), 0);
   assert.equal(countOf('const observers: Array<Observer<any, any, any>> = [];', 'any_type_usage'), 0);
   assert.equal(countOf('const p: Promise<any> = load();', 'any_type_usage'), 1);
+});
+
+test('casts: a plain cast is low severity; unsafe casts stay high', () => {
+  assert.equal(getRule('type_assertion')?.severity, 'low');
+  assert.equal(getRule('unsafe_type_assertion')?.severity, 'high');
 });
 
 test('casts: every cast is reported, `as const` and `as unknown` are not', () => {

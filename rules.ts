@@ -129,7 +129,8 @@ export const RULES: readonly RuleInfo[] = [
   },
   {
     id: 'type_assertion',
-    severity: 'medium',
+    // Low: most casts in reviewed code are deliberate, so a plain cast never fails a run.
+    severity: 'low',
     message: 'Value is cast to another type.',
     why: 'The compiler takes the target type on trust. Prefer a type guard, a typed source, or "satisfies" when you only need to check the shape.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
