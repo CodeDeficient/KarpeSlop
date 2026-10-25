@@ -292,6 +292,10 @@ test('fetch body read without a status check is reported', () => {
   assert.equal(countOf('async function f() { return (await fetch(u)).json(); }', 'unchecked_fetch_response'), 1);
 });
 
+test('logging a fetch response is not a status check', () => {
+  assert.equal(countOf('async function f() {\n  const res = await fetch("/a");\n  console.log(res);\n  return res.json();\n}', 'unchecked_fetch_response'), 1);
+});
+
 test('fetch with a status check, a handed-off response, or a local fetch is not reported', () => {
   assert.equal(countOf('async function f() { const res = await fetch(u); if (!res.ok) throw new Error(); return res.json(); }', 'unchecked_fetch_response'), 0);
   assert.equal(countOf('async function f() { const res = await fetch(u); assertOk(res); return res.json(); }', 'unchecked_fetch_response'), 0);
