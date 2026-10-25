@@ -316,7 +316,8 @@ class ResolutionIndex {
 
   /**
    * Keys of the Deno import maps from `dir` up to the filesystem root: the
-   * `imports` of deno.json/deno.jsonc and of the file its `importMap` names.
+   * `imports` of every deno config there (deno.json, deno.jsonc, deno.<name>.json)
+   * and of the file its `importMap` names.
    * They map names such as `@std/assert` to `jsr:` or URL modules, not npm.
    */
   private denoImportKeys(dir: string): string[] {
@@ -324,7 +325,14 @@ class ResolutionIndex {
     if (cached !== undefined) return cached;
     const parent = path.dirname(dir);
     const keys = parent === dir ? [] : [...this.denoImportKeys(parent)];
-    for (const name of ['deno.json', 'deno.jsonc']) {
+    let entries: string[] = [];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      // Unreadable directory: no import map here.
+    }
+    // deno.json, deno.jsonc, and variants passed with --config (deno.react-jsx.json).
+    for (const name of entries.filter(entry => /^deno(\.[\w-]+)?\.jsonc?$/.test(entry))) {
       const config = readJsoncObject(path.join(dir, name));
       if (config === undefined) continue;
       keys.push(...Object.keys(asObject(config.imports) ?? {}));
