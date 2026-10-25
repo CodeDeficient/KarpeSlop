@@ -26,7 +26,7 @@ npx karpeslop@latest
 | `nonexistent_package` | critical | An imported package that isn't on the npm registry |
 | `undeclared_dependency` | high | An imported package that isn't in any `package.json` and isn't installed |
 | `placeholder_implementation` | high | A body that is only a placeholder comment plus a dummy return, or `throw new Error("Not implemented")` |
-| `elided_code_comment` | high | `// ... rest of the code`, `// ...existing code...` and similar |
+| `elided_code_comment` | high | `// ... rest of the code`, `// ...existing code...`, `{/* ... other fields */}`, `// Add more cases as needed` and similar, in line, block and JSX comments |
 | `placeholder_value` | high | `"YOUR_API_KEY"`, `"<your-token>"`, `"sk-xxxxxx"` and similar |
 | `empty_catch` | high | `catch {}` or `.catch(() => {})` with no comment explaining why. Not reported when the `try` returns and code after it is the fallback (`try { return parse(x) } catch {}` then a default) |
 | `unsafe_type_assertion` | high | `as any` |
