@@ -29,6 +29,9 @@ test('quiet mode still filters explicit paths to core app files and manifests', 
   assert.equal(shouldAnalyzePathInQuietMode('/repo/app/inside.ts', rootDir, coreAppDirs), true);
   assert.equal(shouldAnalyzePathInQuietMode('/repo/src/outside.ts', rootDir, coreAppDirs), false);
   assert.equal(shouldAnalyzePathInQuietMode('/repo/package.json', rootDir, coreAppDirs), true);
+  assert.equal(shouldAnalyzePathInQuietMode('/repo/packages/ui/app/inside.ts', rootDir, coreAppDirs), true);
+  assert.equal(shouldAnalyzePathInQuietMode('/repo/packages/ui/app.ts', rootDir, coreAppDirs), false);
+  assert.equal(shouldAnalyzePathInQuietMode('/repo/applications/x.ts', rootDir, coreAppDirs), false);
 });
 
 test('workspace-local lockfile entries are not treated like registry dependencies', () => {

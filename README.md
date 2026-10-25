@@ -54,7 +54,7 @@ Rules marked for application code skip test files (`__tests__/`, `*.test.*`, `*.
 ```bash
 npx karpeslop@latest                  # scan the current directory
 npx karpeslop@latest src/ lib/api.ts  # scan specific paths
-npx karpeslop@latest --quiet          # only app/, components/, lib/, hooks/, services/, src/; skip tests
+npx karpeslop@latest --quiet          # only app/, components/, lib/, hooks/, services/, src/ (at any depth); skip tests
 npx karpeslop@latest --strict         # exit 2 on critical findings
 npx karpeslop@latest -- -dash-file.ts # paths that start with "-"
 npx karpeslop@latest --help           # list every rule
