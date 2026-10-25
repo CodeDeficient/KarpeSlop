@@ -21,16 +21,14 @@ RECORDS
 # with the original input. It never runs before the guard, so it cannot
 # consume the records the guard needs.
 local_hook="$(dirname "$0")/pre-push.local"
-if [ -e "$local_hook" ]; then
+if [ -e "$local_hook" ] || [ -L "$local_hook" ]; then
   if [ ! -x "$local_hook" ]; then
-    printf '%s\n' "Push blocked: $local_hook exists but is not executable." >&2
+    printf '%s\n' "Push blocked: $local_hook is not executable or is a broken link." >&2
     exit 1
   fi
-  if [ -n "$input" ]; then
-    printf '%s\n' "$input" | "$local_hook" "$@"
-  else
-    "$local_hook" "$@" </dev/null
-  fi
+  # Restore the trailing newline that $(cat) dropped; empty input stays empty.
+  printf '%s' "${input:+$input
+}" | "$local_hook" "$@"
 fi
 
 exit 0

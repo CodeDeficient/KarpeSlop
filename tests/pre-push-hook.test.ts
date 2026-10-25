@@ -26,7 +26,8 @@ function hooksDir(localHook?: string, mode = 0o755): string {
 }
 
 function runHook(dir: string, input: string) {
-  return spawnSync('sh', [path.join(dir, 'pre-push'), 'origin', 'git@example.com:repo.git'], {
+  // Run the file directly, as Git does, so the shebang and exec bit are exercised.
+  return spawnSync(path.join(dir, 'pre-push'), ['origin', 'git@example.com:repo.git'], {
     input,
     encoding: 'utf-8'
   });
@@ -106,7 +107,19 @@ test('pre-push fails when the chained hook is not executable', () => {
   try {
     const result = runHook(dir, record('refs/heads/feature'));
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /not executable/);
+    assert.match(result.stderr, /not executable or is a broken link/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('pre-push fails when the chained hook is a broken symlink', () => {
+  const dir = hooksDir();
+  fs.symlinkSync(path.join(dir, 'missing-hook'), path.join(dir, 'pre-push.local'));
+  try {
+    const result = runHook(dir, record('refs/heads/feature'));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /broken link/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
