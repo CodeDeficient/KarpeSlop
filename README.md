@@ -62,7 +62,7 @@ npx karpeslop@latest -- -dash-file.ts # paths that start with "-"
 npx karpeslop@latest --help           # list every rule
 ```
 
-A JSON report is written to `./ai-slop-report.json`.
+A JSON report is written to `./ai-slop-report.json`. `--report=<path>` writes it elsewhere, and `--no-report` skips it.
 
 ### Exit codes
 

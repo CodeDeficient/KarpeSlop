@@ -270,11 +270,20 @@ export class ConfigError extends Error {}
 /** A command-line flag with a value KarpeSlop does not accept. */
 export class UsageError extends Error {}
 
-const KNOWN_FLAGS = new Set(['--help', '-h', '/?', '--version', '-v', '--quiet', '-q', '--strict', '-s']);
+const KNOWN_FLAGS = new Set(['--help', '-h', '/?', '--version', '-v', '--quiet', '-q', '--strict', '-s', '--no-report']);
 
 /** Flags KarpeSlop does not know. A typo such as `--stirct` would otherwise run without the option. */
 export function unknownFlags(flagArgs: readonly string[]): string[] {
-  return flagArgs.filter(arg => !KNOWN_FLAGS.has(arg) && !arg.startsWith('--fail-on='));
+  return flagArgs.filter(arg => !KNOWN_FLAGS.has(arg) && !arg.startsWith('--fail-on=') && !arg.startsWith('--report='));
+}
+
+/** Where to write the JSON report: `--report=<path>`, nowhere with `--no-report`, else ./ai-slop-report.json. */
+export function reportPathFrom(flagArgs: readonly string[], rootDir: string): string | undefined {
+  if (flagArgs.includes('--no-report')) return undefined;
+  const flag = flagArgs.filter(arg => arg.startsWith('--report=')).at(-1);
+  const value = flag?.slice('--report='.length);
+  if (value === '') throw new UsageError('--report needs a file path, e.g. --report=reports/karpeslop.json');
+  return path.resolve(rootDir, value ?? 'ai-slop-report.json');
 }
 
 /** The severity named by `--fail-on=<severity>`, high when absent. Throws on an unknown value. */
@@ -1054,6 +1063,7 @@ class AISlopDetector {
       issues: consolidatedIssues
     };
 
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
     console.log(`\nReport written to ${outputPath}`);
   }
@@ -1082,6 +1092,8 @@ Options:
   --strict, -s   Exit with code 2 if critical findings (wrong imports, nonexistent packages) are present
   --fail-on=<severity>
                  Lowest severity that fails the run with exit 1: critical, high (default), medium or low
+  --report=<path> Write the JSON report to <path> (default ./ai-slop-report.json)
+  --no-report    Do not write the JSON report
   --version, -v  Show version information
   --             End of flags; treat remaining args as paths (even if they start with -)
 
@@ -1133,8 +1145,10 @@ async function runIfMain() {
     process.exit(1);
   }
   let failOn: Severity;
+  let reportPath: string | undefined;
   try {
     failOn = failOnFrom(flagArgs);
+    reportPath = reportPathFrom(flagArgs, rootDir);
   } catch (error) {
     if (!(error instanceof UsageError)) throw error;
     console.error(`KarpeSlop: ${error.message}`);
@@ -1145,8 +1159,7 @@ async function runIfMain() {
 
   try {
     const issues = await detector.detect(quiet);
-    const outputPath = path.join(rootDir, 'ai-slop-report.json');
-    detector.exportResults(outputPath);
+    if (reportPath !== undefined) detector.exportResults(reportPath);
 
     const criticalIssues = issues.filter(i => i.severity === 'critical');
     if (strict && criticalIssues.length > 0) {
