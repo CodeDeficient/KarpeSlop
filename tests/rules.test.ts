@@ -436,6 +436,32 @@ test('checkImports: names missing from typed modules are reported, including mul
   }
 });
 
+test('checkImports: a default import from a module with no default export is reported', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app', dependencies: { esm: '1.0.0', cjs: '1.0.0', cjsnamed: '1.0.0', withdefault: '1.0.0' } }),
+    'node_modules/esm/package.json': JSON.stringify({ name: 'esm', type: 'module', types: 'index.d.ts' }),
+    'node_modules/cjsnamed/package.json': JSON.stringify({ name: 'cjsnamed', types: 'index.d.ts' }),
+    'node_modules/cjsnamed/index.d.ts': 'export declare function parse(): void;\n',
+    'node_modules/esm/index.d.ts': 'export declare function format(d: Date): string;\n',
+    'node_modules/cjs/package.json': JSON.stringify({ name: 'cjs', types: 'index.d.ts' }),
+    'node_modules/cjs/index.d.ts': 'declare const lib: { pick(): void };\nexport = lib;\n',
+    'node_modules/withdefault/package.json': JSON.stringify({ name: 'withdefault', types: 'index.d.ts' }),
+    'node_modules/withdefault/index.d.ts': 'declare const x: number;\nexport default x;\n',
+    'src/a.ts': "import dateFns from 'esm';\nimport lib from 'cjs';\nimport x, { format } from 'withdefault';\nimport named from 'cjsnamed';\nimport local from './local';\n",
+    'src/local.ts': 'export const only = 1;\n'
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/a.ts')], dir, registry);
+    assert.deepEqual(findings.map(f => [f.type, f.line, f.message]), [
+      ['hallucinated_import', 1, "'esm' has no default export."],
+      ['hallucinated_import', 3, "'format' is not exported by 'withdefault'."],
+      ['hallucinated_import', 5, "'./local' has no default export."]
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: undeclared and nonexistent packages', async () => {
   const dir = makeProject({
     ...fakeReact,
