@@ -421,7 +421,7 @@ class AISlopDetector {
           });
         }
 
-        const knownIds = new Set([...RULES.map(rule => rule.id), 'fresh_package_version', ...this.customPatterns.map(pattern => pattern.id)]);
+        const knownIds = new Set([...BUILT_IN_RULE_IDS, ...this.customPatterns.map(pattern => pattern.id)]);
         for (const [ruleId, severity] of Object.entries(this.config.severityOverrides ?? {})) {
           if (!knownIds.has(ruleId)) {
             console.warn(`${path.basename(configPath)}: severityOverrides.${ruleId} does not name a rule and has no effect. Run karpeslop --help for the rule ids.`);
