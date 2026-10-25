@@ -8,7 +8,6 @@
     "karpeslop": "karpeslop-cli.js"
   },
   "scripts": {
-    "build": "babel ai-slop-detector.ts --out-file karpeslop-bin.js --extensions \".ts,.tsx\"",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc -p .",
     "slop": "tsx ai-slop-detector.ts",
@@ -60,14 +59,6 @@
     "url": "git+https://github.com/CodeDeficient/karpeslop.git"
   },
   "devDependencies": {
-    "@babel/cli": "7.29.7",
-    "@babel/core": "7.29.7",
-    "@babel/preset-typescript": "7.29.7",
     "@types/node": "25.9.2"
-  },
-  "overrides": {
-    "@babel/cli": {
-      "minimatch": "3.1.4"
-    }
   }
 }
