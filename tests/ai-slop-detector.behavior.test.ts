@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import {
@@ -104,7 +105,7 @@ test('splitCliArgs respects -- separator and prevents flag-like paths from being
 // ---------------------------------------------------------------------------
 
 test('--strict exits with code 2 when critical hallucination is found', () => {
-  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-strict-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-strict-'));
   const fixtureFile = path.join(tmpDir, 'hallucinated.tsx');
 
   // The hallucinated_react_import pattern triggers a critical issue
@@ -125,7 +126,9 @@ test('--strict exits with code 2 when critical hallucination is found', () => {
 });
 
 test('severityOverrides with "off" silences unsafe_double_type_assertion without crashing', () => {
-  const fixtureFile = path.resolve(process.cwd(), 'tests/fixtures/temp-off-fixture.ts');
+  // Written outside tests/ so the finding is not dropped as a test file before the override applies.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-off-'));
+  const fixtureFile = path.join(tmpDir, 'off-fixture.ts');
   const configFile = path.resolve(process.cwd(), '.karpesloprc.json');
   const savedConfig = fs.readFileSync(configFile, 'utf-8');
 
@@ -146,6 +149,7 @@ test('severityOverrides with "off" silences unsafe_double_type_assertion without
     assert.ok(!result.stdout.includes('unsafe_double'), 'should not mention the suppressed pattern');
   } finally {
     fs.unlinkSync(fixtureFile);
+    fs.rmdirSync(tmpDir);
     fs.writeFileSync(configFile, savedConfig, 'utf-8');
   }
 });
@@ -380,8 +384,8 @@ test('findUnsafeAssertions reports double and any for chained as Bar as any', ()
   assert.ok(types.includes('unsafe_double_type_assertion'));
   assert.ok(types.includes('unsafe_type_assertion'));
 
-  const anyFinding = findings.find(f => f.type === 'unsafe_type_assertion')!;
-  assert.ok(anyFinding.code.includes('as any'));
+  const anyFinding = findings.find(f => f.type === 'unsafe_type_assertion');
+  assert.ok(anyFinding?.code.includes('as any'));
 });
 
 test('findUnsafeAssertions reports both double and any assertion for chained as unknown as any', () => {
@@ -397,7 +401,9 @@ test('findUnsafeAssertions reports both double and any assertion for chained as 
 });
 
 test('severityOverrides disabling unsafe_double_type_assertion still reports unsafe_type_assertion for chained as unknown as any', () => {
-  const fixtureFile = path.resolve(process.cwd(), 'tests/fixtures/temp-chained-any-fixture.ts');
+  // Written outside tests/ so the file is not treated as a test file.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-chained-'));
+  const fixtureFile = path.join(tmpDir, 'chained-any.ts');
   const configFile = path.resolve(process.cwd(), '.karpesloprc.json');
   const savedConfig = fs.readFileSync(configFile, 'utf-8');
 
@@ -419,12 +425,13 @@ test('severityOverrides disabling unsafe_double_type_assertion still reports uns
     assert.ok(result.stdout.includes('unsafe_type_assertion'), 'should still mention the any assertion');
   } finally {
     fs.unlinkSync(fixtureFile);
+    fs.rmdirSync(tmpDir);
     fs.writeFileSync(configFile, savedConfig, 'utf-8');
   }
 });
 
 test('default mode skips unsafe_type_assertion in test files', () => {
-  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-spec-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-spec-'));
   const fixtureFile = path.join(tmpDir, 'component.test.ts');
 
   fs.writeFileSync(fixtureFile, 'const x = value as any;\n', 'utf-8');
@@ -445,7 +452,7 @@ test('default mode skips unsafe_type_assertion in test files', () => {
 });
 
 test('default mode still reports unsafe_type_assertion in non-test files', () => {
-  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-src-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-src-'));
   const fixtureFile = path.join(tmpDir, 'component.ts');
 
   fs.writeFileSync(fixtureFile, 'const x = value as any;\n', 'utf-8');
@@ -465,8 +472,29 @@ test('default mode still reports unsafe_type_assertion in non-test files', () =>
   }
 });
 
+test('a parent directory named test does not turn the whole project into test files', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-parent-'));
+  const projectDir = path.join(parent, 'test', 'myapp');
+  fs.mkdirSync(path.join(projectDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, 'src', 'index.ts'), 'export const x = value as any;\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    // Resolve tsx from this repo: the project directory has no node_modules.
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--quiet'],
+    { encoding: 'utf-8', cwd: projectDir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+
+  try {
+    assert.equal(result.status, 1, `stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+    assert.ok(result.stdout.includes('unsafe_type_assertion'));
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test('-- separator lets paths starting with - be treated as targets, not flags', () => {
-  const tmpDir = fs.mkdtempSync(path.join(process.platform === 'win32' ? process.env.TEMP! : '/tmp', 'karpeslop-dash-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-dash-'));
   const fixtureFile = path.join(tmpDir, '-my-file.ts');
 
   // Write a file with an any-type so there's actual slop to report.

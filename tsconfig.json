@@ -6,17 +6,18 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./dist",
-    "rootDir": "./",
-    "declaration": false,
-    "sourceMap": false,
-    "removeComments": true,
-    "strict": false,
-    "noImplicitAny": false,
-    "strictNullChecks": false
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "types": ["node"]
   },
   "include": [
-    "ai-slop-detector.ts"
+    "ai-slop-detector.ts",
+    "rules.ts",
+    "imports.ts",
+    "tests/*.test.ts"
   ],
   "exclude": [
     "node_modules",
