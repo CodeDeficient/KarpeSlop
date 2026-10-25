@@ -219,9 +219,19 @@ export function getRule(id: string): RuleInfo | undefined {
 
 export function isTestPath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, '/');
-  return /(^|\/)(__tests__|__mocks__|tests?|spec|e2e|fixtures?)\//.test(normalized) ||
+  return /(^|\/)(__tests__|__mocks__|__fixtures__|__testfixtures__|tests?|spec|e2e|fixtures?)\//.test(normalized) ||
     /\.(test|spec|stories|bench)(-d)?\.[cm]?[jt]sx?$/.test(normalized) ||
     /(^|\/)test-[^/]*$/.test(normalized);
+}
+
+/**
+ * `__fixtures__` and `__testfixtures__` (the jscodeshift convention) hold
+ * sample input such as codemod before/after files, not code that runs. Plain
+ * `fixtures/` folders often hold real test helpers (Playwright), so they are
+ * not included.
+ */
+export function isFixturePath(filePath: string): boolean {
+  return /(^|\/)(__fixtures__|__testfixtures__)\//.test(filePath.replace(/\\/g, '/'));
 }
 
 export function scriptKindFor(fileName: string): ts.ScriptKind {
