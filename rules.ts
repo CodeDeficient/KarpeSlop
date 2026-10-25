@@ -446,18 +446,40 @@ function unsafeAssertionsIn(sourceFile: ts.SourceFile, fileName: string): Unsafe
 // Per-file analysis
 // ---------------------------------------------------------------------------
 
+/** Says the body is unfinished. Counts only when the body is trivial (a constant return, a throw, nothing). */
 const PLACEHOLDER_COMMENT = new RegExp([
   String.raw`\bimplement(ation)?\s+(goes\s+|logic\s+)?here\b`,
   String.raw`\byour\s+(own\s+)?(code|logic|implementation)\b`,
   String.raw`\b(add|insert|put|write)\s+(your\s+|the\s+|actual\s+|real\s+)?(\w+\s+)?(logic|code|implementation)\s+here\b`,
+  String.raw`\b(logic|code|implementation)\b.{0,60}\bgoes\s+here\b`,
   String.raw`\bnot\s+(yet\s+)?implemented\b`,
   String.raw`\bimplement\s+(this|me|later|properly)\b`,
-  String.raw`^(TODO|FIXME)\b.*\bimplement`,
+  String.raw`^(TODO|FIXME)\b`,
+  String.raw`\bfor\s+now\b`,
   String.raw`\b(placeholder|stub)\s+(implementation|logic|code|body|function|method|for\s+now)\b`,
+  String.raw`^(placeholder|stub|dummy|mock)(\s+(value|data|response|implementation))?(\s+for\s+now)?\.?$`,
   String.raw`\bstubbed(\s+out)?\b`
 ].join('|'), 'i');
 
-const NOT_IMPLEMENTED_MESSAGE = /not\s+(yet\s+)?implemented|implement\s+me|^todo\b/i;
+/**
+ * Says the real implementation lives somewhere else ("in a real app you
+ * would...", "simulate the API call"). Strong enough to count on any short body.
+ */
+const STAND_IN_COMMENT = new RegExp([
+  String.raw`\bin\s+a\s+real\s+(app|application|implementation|project|world|scenario|system|environment)\b`,
+  String.raw`\bin\s+production,?\s+(you|we|this|it)\s+(would|should|will)\b`,
+  String.raw`\breplace\s+(this\s+)?with\s+(a\s+|an\s+|the\s+)?(real|actual|proper)\b`,
+  String.raw`\breplace\s+with\s+.{1,40}\b(later|in\s+production)\b`,
+  String.raw`\b(simulate|simulates|simulated|simulating)\s+(an?\s+|the\s+)?(api|network|http|server|request|call|response|delay|latency|fetch|database|db)\b`,
+  String.raw`\b(fake|mock|mocked|dummy|hard-?coded)\s+(data|response|result|value|values|coordinates|implementation|user|users)\b`,
+  String.raw`\bhard-?coded\s+for\s+now\b`,
+  String.raw`\bpretend\b`,
+  String.raw`\bfor\s+(the\s+)?demo\b`,
+  String.raw`\buntil\s+we\s+(wire|hook|implement|integrate|connect|add)\b`
+].join('|'), 'i');
+
+/** A thrown message that is only "not implemented" (`'Method not implemented.'`), not one that explains why. */
+const NOT_IMPLEMENTED_MESSAGE = /^[\w\s'"`.()-]{0,40}\bnot\s+(yet\s+)?implemented(\s+yet)?\W*$|^\W*implement\s+me\b|^\W*todo\b/i;
 
 /**
  * Comments that stand in for code that was left out. Matched on the comment's
@@ -552,16 +574,44 @@ function isFillerComment(comment: CommentInfo): boolean {
   return tagLines > 0;
 }
 
+/** A constant: a literal, or an array or object built only from literals. */
 function isTrivialExpression(expr: ts.Expression | undefined): boolean {
   if (expr === undefined) return true;
-  if (ts.isParenthesizedExpression(expr)) return isTrivialExpression(expr.expression);
+  if (ts.isParenthesizedExpression(expr) || ts.isAwaitExpression(expr)) return isTrivialExpression(expr.expression);
   if (ts.isNumericLiteral(expr) || ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return true;
+  if (ts.isPrefixUnaryExpression(expr)) return ts.isNumericLiteral(expr.operand);
   if (ts.isIdentifier(expr)) return expr.text === 'undefined';
-  if (ts.isArrayLiteralExpression(expr)) return expr.elements.length === 0;
-  if (ts.isObjectLiteralExpression(expr)) return expr.properties.length === 0;
+  if (ts.isArrayLiteralExpression(expr)) return expr.elements.every(element => isTrivialExpression(element));
+  if (ts.isObjectLiteralExpression(expr)) {
+    return expr.properties.every(property => ts.isPropertyAssignment(property) && isTrivialExpression(property.initializer));
+  }
   return expr.kind === ts.SyntaxKind.NullKeyword ||
     expr.kind === ts.SyntaxKind.TrueKeyword ||
     expr.kind === ts.SyntaxKind.FalseKeyword;
+}
+
+/** A constant other than undefined/null/empty: `true`, `{ success: true }`, `[{ id: 1 }]`. */
+function isMeaningfulConstant(expr: ts.Expression | undefined): boolean {
+  if (expr === undefined || !isTrivialExpression(expr)) return false;
+  const inner = ts.isParenthesizedExpression(expr) || ts.isAwaitExpression(expr) ? expr.expression : expr;
+  if (ts.isIdentifier(inner) || inner.kind === ts.SyntaxKind.NullKeyword) return false;
+  if (ts.isArrayLiteralExpression(inner)) return inner.elements.length > 0;
+  if (ts.isObjectLiteralExpression(inner)) return inner.properties.length > 0;
+  return true;
+}
+
+/** `await new Promise(resolve => setTimeout(resolve, 500))` or `await sleep(500)`: a stand-in for real work. */
+function isFakeDelay(statement: ts.Statement): boolean {
+  if (!ts.isExpressionStatement(statement) || !ts.isAwaitExpression(statement.expression)) return false;
+  const awaited = statement.expression.expression;
+  if (ts.isCallExpression(awaited) && ts.isIdentifier(awaited.expression)) {
+    return /^(sleep|delay|wait|timeout)$/i.test(awaited.expression.text) &&
+      awaited.arguments.length === 1 && ts.isNumericLiteral(awaited.arguments[0]);
+  }
+  if (!ts.isNewExpression(awaited) || !ts.isIdentifier(awaited.expression) || awaited.expression.text !== 'Promise') return false;
+  const executor = awaited.arguments?.[0];
+  return executor !== undefined && (ts.isArrowFunction(executor) || ts.isFunctionExpression(executor)) &&
+    /\bsetTimeout\s*\(/.test(executor.body.getText());
 }
 
 function isNotImplementedThrow(statement: ts.Statement): boolean {
@@ -584,7 +634,32 @@ function isTrivialStatement(statement: ts.Statement): boolean {
     if (ts.isVoidExpression(expr)) return true;
     return ts.isCallExpression(expr) && isConsoleCall(expr, /^(log|debug|info|warn)$/);
   }
-  return false;
+  return isFakeDelay(statement);
+}
+
+/** Statements in a block, counting those in nested blocks. */
+function statementCount(block: ts.Block): number {
+  let count = 0;
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isBlock(node)) count += node.statements.length;
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(block, visit);
+  return count + block.statements.length;
+}
+
+/**
+ * A body that only logs or waits and then reports success, in a function
+ * that takes input: `console.log('Sending email to', to); return true;`.
+ */
+function isFakeWork(node: ts.FunctionLikeDeclaration, statements: ts.NodeArray<ts.Statement>): boolean {
+  if (node.parameters.length === 0 || statements.length < 2 || statements.length > 3) return false;
+  const last = statements[statements.length - 1];
+  if (!ts.isReturnStatement(last) || !isMeaningfulConstant(last.expression)) return false;
+  return statements.slice(0, -1).every(statement => isFakeDelay(statement) ||
+    (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression) &&
+      isConsoleCall(statement.expression, /^(log|debug|info)$/)));
 }
 
 function isConsoleCall(call: ts.CallExpression, methods: RegExp): boolean {
@@ -803,8 +878,10 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       const statements = body.statements;
       const allTrivial = statements.length <= 2 && statements.every(isTrivialStatement);
       const commentSaysPlaceholder = inner.some(c => PLACEHOLDER_COMMENT.test(c.body));
+      const commentSaysStandIn = inner.some(c => STAND_IN_COMMENT.test(c.body));
       const throwsNotImplemented = statements.length === 1 && isNotImplementedThrow(statements[0]);
-      if ((commentSaysPlaceholder && allTrivial) || throwsNotImplemented) {
+      if ((commentSaysPlaceholder && allTrivial) || (commentSaysStandIn && statementCount(body) <= 3) ||
+        throwsNotImplemented || isFakeWork(node, statements)) {
         placeholderBodies.push(body);
         const anchor = node.name ?? node;
         findings.push({

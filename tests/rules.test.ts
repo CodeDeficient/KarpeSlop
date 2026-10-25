@@ -44,6 +44,45 @@ test('placeholder: comments that merely mention "placeholder" or "stub" are not 
   assert.equal(countOf('function f() {\n  // placeholder implementation\n  return [];\n}', 'placeholder_implementation'), 1);
 });
 
+test('placeholder: a TODO, "for now" or "placeholder" in a body that returns a constant is reported', () => {
+  for (const code of [
+    'function rate(kg: number): number {\n  // TODO: add shipping rate calculation\n  return 0;\n}',
+    'function enabled(flag: string): boolean {\n  // For now, enable everything\n  return true;\n}',
+    'function perms(role: string): string[] {\n  return []; // placeholder\n}',
+    'class Log { record(e: string) {\n    // Logic to persist the event goes here\n  } }',
+    'async function orders(id: string) {\n  // TODO\n  return [{ id: 1, total: 42 }];\n}'
+  ]) {
+    assert.equal(countOf(code, 'placeholder_implementation'), 1, code);
+  }
+});
+
+test('placeholder: a comment that says the real code is elsewhere is reported on a short body', () => {
+  for (const code of [
+    'async function invoice(id: string) {\n  // Simulate API call\n  await new Promise(resolve => setTimeout(resolve, 500));\n  return { success: true };\n}',
+    'function verify(a: string, b: string) {\n  // In a real application, you would use bcrypt here\n  return a === b;\n}',
+    'function hash(p: string) {\n  // NOTE: replace with a proper hashing algorithm in production\n  return p;\n}',
+    'async function orders(id: string) {\n  // Mock data\n  const rows = [{ id: 1 }];\n  return rows;\n}'
+  ]) {
+    assert.equal(countOf(code, 'placeholder_implementation'), 1, code);
+  }
+});
+
+test('placeholder: a body that only logs and reports success is reported', () => {
+  assert.equal(countOf('async function send(to: string) {\n  console.log(`Sending to ${to}`);\n  return true;\n}', 'placeholder_implementation'), 1);
+  assert.equal(countOf('function warn(msg: string) {\n  console.log(msg);\n}', 'placeholder_implementation'), 0);
+  assert.equal(countOf('function ready() {\n  console.log("ready");\n  return true;\n}', 'placeholder_implementation'), 0);
+});
+
+test('placeholder: real code near a stand-in comment, and explained throws, are not placeholders', () => {
+  const mockInterceptor = 'const i = (req: R) => {\n  if (req.url) {\n    const data = load();\n    // Simulate network latency\n    const ms = Math.random() * 400;\n    return of(data).pipe(delay(ms));\n  }\n  return next(req);\n};';
+  assert.equal(countOf(mockInterceptor, 'placeholder_implementation'), 0);
+  assert.equal(countOf('const s = { set(): never {\n  throw new Error("read-only store: not implemented by design");\n} };', 'placeholder_implementation'), 0);
+  assert.equal(countOf('class A { run() { throw new Error("Method not implemented."); } }', 'placeholder_implementation'), 1);
+  assert.equal(countOf('class A { run() { throw new Error("TODO: integrate Twilio"); } }', 'placeholder_implementation'), 1);
+  assert.equal(countOf('class NullRepo { async load(): Promise<null> { return null; } }', 'placeholder_implementation'), 0);
+  assert.equal(countOf('function defaults() {\n  // Defaults for local development\n  return { port: 3000 };\n}', 'placeholder_implementation'), 0);
+});
+
 test('placeholder: empty no-op callbacks are not placeholders', () => {
   assert.equal(countOf('const noop = () => {};\nfunction onIdle() {}\n', 'placeholder_implementation'), 0);
 });
