@@ -223,6 +223,12 @@ export function scriptKindFor(fileName: string): ts.ScriptKind {
   return ts.ScriptKind.TS;
 }
 
+/** Casts, `any` and `!` exist only in TypeScript, so those rules skip JavaScript files. */
+function isTypeScriptFile(fileName: string): boolean {
+  const kind = scriptKindFor(fileName);
+  return kind === ts.ScriptKind.TS || kind === ts.ScriptKind.TSX;
+}
+
 // ---------------------------------------------------------------------------
 // Comments
 // ---------------------------------------------------------------------------
@@ -397,7 +403,7 @@ function classifyCast(node: AssertionNode): CastReport[] {
  * Other casts are reported by analyzeSource as type_assertion.
  */
 export function findUnsafeAssertions(sourceText: string, fileName: string): UnsafeAssertionFinding[] {
-  if (fileName.endsWith('.d.ts')) return [];
+  if (!isTypeScriptFile(fileName) || fileName.endsWith('.d.ts')) return [];
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
   return unsafeAssertionsIn(sourceFile, fileName);
 }
@@ -712,7 +718,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
   const comments = collectComments(sourceFile);
   const findings: Finding[] = [];
-  const isTypeScript = /\.[cm]?tsx?$/.test(fileName);
+  const isTypeScript = isTypeScriptFile(fileName);
 
   const positionOf = (pos: number) => {
     const { line, character } = sourceFile.getLineAndCharacterOfPosition(pos);
@@ -809,7 +815,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       report('type_assertion', node);
     }
 
-    if (ts.isNonNullExpression(node)) {
+    if (ts.isNonNullExpression(node) && isTypeScript) {
       report('non_null_assertion', node);
     }
 
