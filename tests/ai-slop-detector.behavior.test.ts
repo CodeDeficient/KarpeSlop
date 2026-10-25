@@ -322,15 +322,25 @@ test('findUnsafeAssertions detects unsafe as any assertion in multiline expressi
 
   assert.equal(findings.length, 1);
   assert.equal(findings[0].type, 'unsafe_type_assertion');
-  assert.equal(findings[0].line, 2);
+  assert.equal(findings[0].line, 1);
 });
 
-test('findUnsafeAssertions reports multiline as any despite eslint-disable-line on the any line', () => {
+test('findUnsafeAssertions reports multiline as any at its first line despite eslint-disable-line on the any line', () => {
   const code = 'const x = value as\nany; // eslint-disable-line';
   const findings = findUnsafeAssertions(code, 'x.ts');
   assert.equal(findings.length, 1);
   assert.equal(findings[0].type, 'unsafe_type_assertion');
-  assert.equal(findings[0].line, 2);
+  assert.equal(findings[0].line, 1);
+});
+
+test('findUnsafeAssertions reports every cast form at the column where the cast starts', () => {
+  const positions = (code: string) => findUnsafeAssertions(code, 'x.ts').map(f => `${f.type}@${f.line}:${f.column}`);
+  assert.deepEqual(positions('const a = value as any;'), ['unsafe_type_assertion@1:11']);
+  assert.deepEqual(positions('const a = <any>value;'), ['unsafe_type_assertion@1:11']);
+  assert.deepEqual(positions('const a = value as unknown as any;'),
+    ['unsafe_double_type_assertion@1:11', 'unsafe_type_assertion@1:11']);
+  assert.deepEqual(positions('const a = value as Record<string, unknown>;'), ['unsafe_object_assertion@1:11']);
+  assert.deepEqual(positions('const a = value as Foo[];'), ['unsafe_array_assertion@1:11']);
 });
 
 test('unsafe_type_assertion guidance does not recommend chained assertion pattern to users', () => {

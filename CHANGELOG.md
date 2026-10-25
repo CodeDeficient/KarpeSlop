@@ -2,6 +2,11 @@
 
 All notable changes will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- `unsafe_type_assertion` reports the start of the cast (`value` in `value as any`), like the other cast rules, instead of the `any` keyword. A multi-line cast now reports the line it starts on.
+
 ## [2.0.0] - 2026-10-25
 
 Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript codebases (zustand `src`, TanStack Query `query-core/src` and `react-query/src`) and a file with eight planted mistakes typical of generated code. Before: 300 findings on the clean code, mostly false positives, and 1 of 8 planted mistakes caught. After: every finding on the clean code is a real cast, `any`, `!`, TODO or restating comment, and 8 of 8 planted mistakes are caught.

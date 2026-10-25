@@ -354,7 +354,6 @@ export const UNSAFE_ASSERTION_TYPES = new Set([
 interface CastReport {
   type: string;
   form: string;
-  anchor: ts.Node;
 }
 
 /** Classify one cast. Chained casts report the chain, plus `as any` when it ends in any. */
@@ -380,16 +379,16 @@ function isInnerOfChain(node: AssertionNode): boolean {
 function classifyCast(node: AssertionNode): CastReport[] {
   const isAny = node.type.kind === ts.SyntaxKind.AnyKeyword;
   if (innerCast(node) !== undefined) {
-    const reports: CastReport[] = [{ type: 'unsafe_double_type_assertion', form: 'chained_as', anchor: node }];
+    const reports: CastReport[] = [{ type: 'unsafe_double_type_assertion', form: 'chained_as' }];
     // Report the trailing `as any` as well, so turning off the chained-cast
     // rule does not hide it.
-    if (isAny) reports.push({ type: 'unsafe_type_assertion', form: 'as_any', anchor: node.type });
+    if (isAny) reports.push({ type: 'unsafe_type_assertion', form: 'as_any' });
     return reports;
   }
-  if (isAny) return [{ type: 'unsafe_type_assertion', form: 'as_any', anchor: node.type }];
-  if (isObjectTypeNode(node.type)) return [{ type: 'unsafe_object_assertion', form: 'as_object', anchor: node }];
-  if (isArrayTypeNode(node.type)) return [{ type: 'unsafe_array_assertion', form: 'as_array', anchor: node }];
-  return [{ type: 'type_assertion', form: 'as_type', anchor: node }];
+  if (isAny) return [{ type: 'unsafe_type_assertion', form: 'as_any' }];
+  if (isObjectTypeNode(node.type)) return [{ type: 'unsafe_object_assertion', form: 'as_object' }];
+  if (isArrayTypeNode(node.type)) return [{ type: 'unsafe_array_assertion', form: 'as_array' }];
+  return [{ type: 'type_assertion', form: 'as_type' }];
 }
 
 /**
@@ -409,16 +408,17 @@ function unsafeAssertionsIn(sourceFile: ts.SourceFile, fileName: string): Unsafe
 
   const visit = (node: ts.Node) => {
     if (isCast(node)) {
+      const start = node.getStart(sourceFile);
+      const { line, character } = sourceFile.getLineAndCharacterOfPosition(start);
       for (const cast of classifyCast(node)) {
         if (!UNSAFE_ASSERTION_TYPES.has(cast.type)) continue;
         const rule = getRule(cast.type);
-        const { line, character } = sourceFile.getLineAndCharacterOfPosition(cast.anchor.getStart(sourceFile));
         findings.push({
           type: cast.type,
           file: fileName,
           line: line + 1,
           column: character + 1,
-          code: sourceText.slice(node.getStart(sourceFile), node.end),
+          code: sourceText.slice(start, node.end),
           message: rule?.message ?? cast.type,
           severity: rule?.severity ?? 'high',
           assertionForm: cast.form
