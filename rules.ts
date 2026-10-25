@@ -554,7 +554,7 @@ const PLACEHOLDER_VALUE_PATTERNS: readonly RegExp[] = [
   /[_-]your[_-][\w-]*[_-]here$/i,
   /^(changeme|change[_-]me|replace[_-]?me)$/i,
   // Credentials and domains that are templates: postgres://user:password@..., you@yourdomain.com
-  /:\/\/[\w.-]+:(password|pass|secret|changeme|pwd)@/i,
+  /:\/\/[\w.%-]+:(password|pass|secret|changeme|pwd)@/i,
   /[@.](your[-_]?(domain|company|app|project|site|org))\.(com|org|net|io|co|dev|app)\b/i,
   // https://your-project.supabase.co
   /^[a-z]+:\/\/your[-_][\w-]*\./i,
@@ -606,7 +606,7 @@ function readsSecretEnv(expr: ts.Expression): boolean {
 function storedIn(literal: ts.Node): ts.NamedDeclaration | undefined {
   let parent = literal.parent;
   while (ts.isBinaryExpression(parent) || ts.isParenthesizedExpression(parent) || ts.isTemplateSpan(parent) ||
-    ts.isConditionalExpression(parent) || ts.isAsExpression(parent) || ts.isSatisfiesExpression(parent)) {
+    ts.isTemplateExpression(parent) || ts.isConditionalExpression(parent) || ts.isAsExpression(parent) || ts.isSatisfiesExpression(parent)) {
     parent = parent.parent;
   }
   return ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent) || ts.isParameter(parent) ||
@@ -617,11 +617,20 @@ function storedIn(literal: ts.Node): ts.NamedDeclaration | undefined {
 
 /** `'xxxx'` is a placeholder only where a secret goes; elsewhere it is often a format token (date-fns `XXXX`). */
 const MASKED_VALUE = /^x{3,}$/i;
-const SECRET_NAME = /(key|token|secret|password|passwd|auth|credential)/i;
+const SECRET_WORDS = new Set(['key', 'auth', 'authorization']);
+/** Endings that make a run-together word a secret (`clientsecret`, `DBPASSWORD`); `key` only after a known prefix, so `monkey` is not one. */
+const SECRET_WORD_ENDING = /(token|secret|password|passwd|pwd|credential)$|^(api|access|secret|private|signing|encryption|license)key$/;
+
+/** A word of the name is a secret word: `apiKey`, `AUTH_TOKEN`, `JWTSecret`, `credentials`, `apiKey2`, but not `monkey` or `author`. */
+function isSecretName(name: string): boolean {
+  return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').split(/[^A-Za-z0-9]+/)
+    .map(word => word.toLowerCase().replace(/\d+$/, '').replace(/s$/, ''))
+    .some(word => SECRET_WORDS.has(word) || SECRET_WORD_ENDING.test(word));
+}
 
 function isMaskedSecret(literal: ts.StringLiteralLike): boolean {
   const name = storedIn(literal)?.name;
-  return MASKED_VALUE.test(literal.text) && name !== undefined && SECRET_NAME.test(name.getText());
+  return MASKED_VALUE.test(literal.text) && name !== undefined && isSecretName(name.getText());
 }
 
 const RESTATING_STOPWORDS = new Set([
