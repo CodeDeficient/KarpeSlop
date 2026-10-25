@@ -138,9 +138,11 @@ To update an installed copy, first check that it is an unmodified KarpeSlop hook
 
 ```bash
 hook="$(git rev-parse --git-path hooks)/pre-push"
-for c in $(git rev-list HEAD -- .githooks/pre-push); do
-  git show "$c:.githooks/pre-push" | cmp -s - "$hook" && echo "matches $c"
-done
+if [ -f "$hook" ] && [ ! -L "$hook" ] && grep -qF 'Managed by KarpeSlop setup-git-hooks.sh.' "$hook"; then
+  for c in $(git rev-list HEAD -- .githooks/pre-push); do
+    git show "$c:.githooks/pre-push" | cmp -s - "$hook" && echo "matches $c"
+  done
+fi
 ```
 
 If it matches, move it to the trash and run the script again. Hooks installed before the marker existed can't be told apart from your own; leave them unless you are sure they are KarpeSlop's.
