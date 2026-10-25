@@ -6,6 +6,9 @@ karpeslop-bin.js
 .DS_Store
 *.log
 final-test/
+/test-*.ts
+/test_*.sh
+/verification-*.ts
 thorough-test/
 ai-slop-report.json
 CLAUDE.md
