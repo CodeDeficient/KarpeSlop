@@ -118,7 +118,7 @@ There are no inline suppression comments. A comment that silences the linter is 
   run: npx karpeslop@latest --quiet --strict
 ```
 
-[`examples/github-workflow.yml`](examples/github-workflow.yml) is a complete workflow that also uploads the JSON report and comments on the pull request when the check fails.
+[`examples/github-workflow.yml`](examples/github-workflow.yml) is a complete workflow that also uploads the JSON report and comments on the pull request when the check fails. [`examples/pre-commit`](examples/pre-commit) is a git hook that blocks a commit on critical findings.
 
 ## Contributing
 

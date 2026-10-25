@@ -1,0 +1,15 @@
+#!/bin/sh
+# KarpeSlop pre-commit hook.
+# Copy to .git/hooks/pre-commit (or call it from husky or lint-staged) and make it executable.
+
+npx karpeslop@latest --quiet --strict --no-report
+status=$?
+
+if [ $status -eq 2 ]; then
+  echo "KarpeSlop: critical findings (imports or packages that do not exist). Commit blocked."
+  exit 1
+elif [ $status -eq 1 ]; then
+  # High-severity findings. Change this to 'exit 1' to block the commit on them too.
+  echo "KarpeSlop: high-severity findings above. Commit allowed."
+fi
+exit 0
