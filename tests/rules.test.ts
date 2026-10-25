@@ -80,6 +80,7 @@ test('empty catch that falls through to a fallback is not reported', () => {
   assert.equal(countOf('function f(c: string) {\n  try { return new TextDecoder(c); } catch {}\n  return new TextDecoder();\n}', 'empty_catch'), 0);
   assert.equal(countOf('function f(c?: string) {\n  if (c) {\n    try { return decode(c); } catch (_) {}\n  }\n  return null;\n}', 'empty_catch'), 0);
   assert.equal(countOf('function f(xs: string[]) {\n  for (const x of xs) {\n    try { return load(x); } catch {}\n  }\n  throw new Error("none");\n}', 'empty_catch'), 0);
+  assert.equal(countOf('function f(k: string, x: string) {\n  switch (k) {\n    case "json":\n      try { return JSON.parse(x); } catch {}\n      return null;\n  }\n}', 'empty_catch'), 0);
 });
 
 test('empty catch with nothing after it, or a try that does not return, is reported', () => {

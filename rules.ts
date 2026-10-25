@@ -710,7 +710,7 @@ function isFallbackCatch(clause: ts.CatchClause): boolean {
   while (!ts.isFunctionLike(current.parent) && !ts.isSourceFile(current)) {
     const parent = current.parent;
     if (ts.isIterationStatement(parent, false)) return true;
-    if (ts.isBlock(parent) || ts.isSourceFile(parent)) {
+    if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isCaseOrDefaultClause(parent)) {
       const index = parent.statements.findIndex(statement => statement === current);
       if (index < parent.statements.length - 1) return true;
     }
