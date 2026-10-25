@@ -381,7 +381,6 @@ interface CastReport {
   form: string;
 }
 
-/** Classify one cast. Chained casts report the chain, plus `as any` when it ends in any. */
 function skipParentheses(expr: ts.Expression): ts.Expression {
   let current = expr;
   while (ts.isParenthesizedExpression(current)) current = current.expression;
@@ -405,6 +404,7 @@ function isInnerOfChain(node: AssertionNode): boolean {
   return isCast(parent);
 }
 
+/** Classify one cast. Chained casts report the chain, plus `as any` when it ends in any. */
 function classifyCast(node: AssertionNode): CastReport[] {
   const isAny = node.type.kind === ts.SyntaxKind.AnyKeyword;
   if (innerCast(node) !== undefined) {
