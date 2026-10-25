@@ -15,6 +15,7 @@ import {
   pLimit,
   shouldAnalyzePathInQuietMode,
   splitCliArgs,
+  uniqueRealFiles,
 } from '../ai-slop-detector.ts';
 import { npmRegistryLookup } from '../imports.ts';
 
@@ -32,6 +33,19 @@ test('quiet mode still filters explicit paths to core app files and manifests', 
   assert.equal(shouldAnalyzePathInQuietMode('/repo/packages/ui/app/inside.ts', rootDir, coreAppDirs), true);
   assert.equal(shouldAnalyzePathInQuietMode('/repo/packages/ui/app.ts', rootDir, coreAppDirs), false);
   assert.equal(shouldAnalyzePathInQuietMode('/repo/applications/x.ts', rootDir, coreAppDirs), false);
+});
+
+test('symlinked copies of a file are scanned once, under the real path', () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-links-')));
+  try {
+    fs.writeFileSync(path.join(dir, 'config.ts'), 'export {};\n');
+    fs.mkdirSync(path.join(dir, 'pkg'));
+    fs.symlinkSync(path.join(dir, 'config.ts'), path.join(dir, 'pkg', 'config.ts'));
+    assert.deepEqual(uniqueRealFiles([path.join(dir, 'pkg', 'config.ts'), path.join(dir, 'config.ts')]), [path.join(dir, 'config.ts')]);
+    assert.deepEqual(uniqueRealFiles([path.join(dir, 'config.ts'), path.join(dir, 'pkg', 'config.ts')]), [path.join(dir, 'config.ts')]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('workspace-local lockfile entries are not treated like registry dependencies', () => {
