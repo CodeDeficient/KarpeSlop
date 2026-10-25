@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepack": "npm run build",
+    "prepare": "npm run build",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc -p .",
     "slop": "tsx ai-slop-detector.ts",
