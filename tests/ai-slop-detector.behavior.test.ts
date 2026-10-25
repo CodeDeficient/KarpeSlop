@@ -667,3 +667,24 @@ test('npm registry requests send a karpeslop User-Agent', async (t) => {
 
   assert.deepEqual(userAgents, [`karpeslop/${version}`, `karpeslop/${version}`]);
 });
+
+test('finding density counts application code only', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-density-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'app.ts'), 'export const a = 1;\n// TODO tidy\nexport const b = 2;\n');
+    fs.mkdirSync(path.join(dir, '__tests__'));
+    fs.writeFileSync(path.join(dir, '__tests__', 'a.test.ts'), Array.from({ length: 97 }, (_, i) => `export const t${i} = ${i};`).join('\n') + '\n');
+    const log = t.mock.method(console, 'log', () => {});
+    const detector = new AISlopDetector(dir, undefined, async () => 'unknown');
+    await detector.detect();
+    const summary = log.mock.calls.map(call => String(call.arguments[0])).find(line => line.includes('per 1,000'));
+    assert.match(summary ?? '', /333\.3 per 1,000 lines of application code/);
+    const report = path.join(dir, 'report.json');
+    detector.exportResults(report);
+    const parsed = JSON.parse(fs.readFileSync(report, 'utf8'));
+    assert.equal(parsed.linesScanned, 100);
+    assert.equal(parsed.applicationLinesScanned, 3);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

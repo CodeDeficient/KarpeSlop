@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- Finding density is per 1,000 lines of application code: test files, whose findings most rules skip, are left out of both sides. The JSON report adds `applicationLinesScanned`.
 - Each real file is scanned once. Symlinked copies (TanStack Query links the root lint config into every package) were scanned and reported once per link.
 - `__fixtures__` and `__testfixtures__` folders count as test code, and their imports are not checked: they hold sample input such as codemod before/after files. TanStack Query's codemod fixtures produced 54 `undeclared_dependency` findings.
 - `hedging_comment` also recognizes "might not work", "seems to work" and "should handle most/all ...", and skips a hedge that links the issue it is about.
