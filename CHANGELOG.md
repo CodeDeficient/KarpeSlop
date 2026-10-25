@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- `filler_comment` reports a stock opener ("This function is used to ...", "This component is responsible for ...") only when the rest of the summary repeats the declaration that follows. A doc comment that opens that way and then explains something is no longer reported.
 - `restating_comment` skips one-word comments such as `// Imports` or `// ZodEmail`, which label a section rather than restate a line, and commented-out code. They were most of its findings on zod and TanStack Query.
 - `placeholder_value` recognizes `<API_KEY>`, `Bearer <API_KEY>`, `INSERT_API_KEY_HERE`, template credentials in URLs (`user:password@`), `yourdomain.com`, `XXX` path segments in URLs, and `example.com` URLs stored in a variable or property (not ones passed to a call, such as a base for `new URL`). It also reports a non-empty hard-coded fallback for a secret environment variable (`process.env.SESSION_PASSWORD ?? 'supersecret'`).
 - `unchecked_fetch_response`: passing the response to a `console` call no longer counts as checking its status.

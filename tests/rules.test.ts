@@ -393,6 +393,13 @@ test('restating comment: explanations and documented assumptions are not reporte
   assert.equal(countOf('// Assumes the input is sorted; binary search depends on it.\nfind(xs, t);', 'restating_comment'), 0);
 });
 
+test('filler opener: reported only when the summary repeats the code that follows', () => {
+  assert.equal(countOf('/**\n * This function is used to fetch users.\n */\nexport function fetchUsers() { return 1; }', 'filler_comment'), 1);
+  assert.equal(countOf('/** This function is used to fetch users. */ export function fetchUsers() { return 1; }\nconst other = 2;', 'filler_comment'), 1);
+  const informative = '/**\n * This function is responsible for retrying a request with exponential backoff.\n * Gives up after `attempts` tries.\n */\nexport function withRetry() { return 1; }';
+  assert.equal(countOf(informative, 'filler_comment'), 0);
+});
+
 test('filler doc comment: @param/@returns that restate names', () => {
   assert.equal(countOf('/**\n * @param id - the id\n * @returns the result\n */\nfunction get(id: string) { return id; }', 'filler_comment'), 1);
   assert.equal(countOf('/**\n * @param id - row id from the orders table, not the order number\n */\nfunction get(id: string) { return id; }', 'filler_comment'), 0);
