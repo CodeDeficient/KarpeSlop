@@ -217,9 +217,10 @@ export function getRule(id: string): RuleInfo | undefined {
   return RULE_BY_ID.get(id);
 }
 
-export function isTestPath(filePath: string): boolean {
+/** Tests, benchmarks and examples: code that does not ship, so rules for application code skip it. */
+export function isNonProductionPath(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, '/');
-  return /(^|\/)(__tests__|__mocks__|__fixtures__|__testfixtures__|tests?|spec|e2e|fixtures?)\//.test(normalized) ||
+  return /(^|\/)(__tests__|__mocks__|__fixtures__|__testfixtures__|tests?|spec|e2e|fixtures?|runtime-tests|benchmarks?|bench|perf-measures|examples?)\//.test(normalized) ||
     /\.(test|spec|stories|bench)(-d)?\.[cm]?[jt]sx?$/.test(normalized) ||
     /(^|\/)test-[^/]*$/.test(normalized);
 }
