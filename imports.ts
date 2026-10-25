@@ -94,12 +94,26 @@ export function isBarePackageSpecifier(specifier: string): boolean {
 function readJsonObject(filePath: string): Record<string, unknown> | undefined {
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-      ? Object.fromEntries(Object.entries(parsed))
-      : undefined;
+    return asObject(parsed);
   } catch {
     return undefined;
   }
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : undefined;
+}
+
+/** A JSON-with-comments file (deno.jsonc, tsconfig-style) as an object, or undefined. */
+function readJsoncObject(filePath: string): Record<string, unknown> | undefined {
+  let text: string;
+  try {
+    text = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  const parsed = ts.parseConfigFileTextToJson(filePath, text);
+  return parsed.error === undefined ? asObject(parsed.config) : undefined;
 }
 
 const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
@@ -271,6 +285,7 @@ const BUNDLER_CONFIG = /^((vite|vitest|webpack|next|nuxt|astro|svelte|rollup|rsp
 class ResolutionIndex {
   private configs = new Map<string, ProjectConfig>();
   private bundlerText = new Map<string, string>();
+  private denoKeys = new Map<string, string[]>();
 
   configFor(fileDir: string): ProjectConfig {
     const configPath = findProjectConfig(fileDir) ?? '';
@@ -300,11 +315,36 @@ class ResolutionIndex {
   }
 
   /**
+   * Keys of the Deno import maps from `dir` up to the filesystem root: the
+   * `imports` of deno.json/deno.jsonc and of the file its `importMap` names.
+   * They map names such as `@std/assert` to `jsr:` or URL modules, not npm.
+   */
+  private denoImportKeys(dir: string): string[] {
+    const cached = this.denoKeys.get(dir);
+    if (cached !== undefined) return cached;
+    const parent = path.dirname(dir);
+    const keys = parent === dir ? [] : [...this.denoImportKeys(parent)];
+    for (const name of ['deno.json', 'deno.jsonc']) {
+      const config = readJsoncObject(path.join(dir, name));
+      if (config === undefined) continue;
+      keys.push(...Object.keys(asObject(config.imports) ?? {}));
+      if (typeof config.importMap === 'string') {
+        keys.push(...Object.keys(asObject(readJsoncObject(path.resolve(dir, config.importMap))?.imports) ?? {}));
+      }
+    }
+    this.denoKeys.set(dir, keys);
+    return keys;
+  }
+
+  /**
    * True when the specifier's first segment is an alias rather than a package:
-   * a tsconfig `paths` key, a folder under `baseUrl` (or `src/`), or a name a
-   * bundler config mentions.
+   * a tsconfig `paths` key, a Deno import map entry, a folder under `baseUrl`
+   * (or `src/`), or a name a bundler config mentions.
    */
   isAlias(specifier: string, fileDir: string, options: ts.CompilerOptions): boolean {
+    if (this.denoImportKeys(fileDir).some(key => key.endsWith('/') ? specifier.startsWith(key) : specifier === key || specifier.startsWith(`${key}/`))) {
+      return true;
+    }
     const first = specifier.split('/')[0];
     const pathKeys = Object.keys(options.paths ?? {});
     if (pathKeys.some(key => key.split('/')[0].replace(/\*$/, '') === first)) return true;

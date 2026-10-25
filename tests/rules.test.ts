@@ -665,6 +665,27 @@ test('checkImports: a catch-all paths key does not turn missing packages into mi
   }
 });
 
+test('checkImports: names from a Deno import map are not npm packages', async () => {
+  const lookups: string[] = [];
+  const recording: RegistryLookup = async name => {
+    lookups.push(name);
+    return 'missing';
+  };
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'repo', private: true }),
+    'runtime-tests/deno/deno.jsonc': '{\n  // JSR packages\n  "imports": { "@std/assert": "jsr:@std/assert@^1", "@std/path/": "jsr:/@std/path@^1/" },\n  "importMap": "./map.json"\n}\n',
+    'runtime-tests/deno/map.json': JSON.stringify({ imports: { 'oak': 'https://deno.land/x/oak/mod.ts' } }),
+    'runtime-tests/deno/a.test.ts': "import { assertEquals } from '@std/assert';\nimport { join } from '@std/path/posix';\nimport { Application } from 'oak';\nimport { x } from 'left-padx-utils-ai';\n"
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'runtime-tests/deno/a.test.ts')], dir, recording);
+    assert.deepEqual(findings.map(f => [f.type, f.line]), [['nonexistent_package', 4]]);
+    assert.deepEqual(lookups, ['left-padx-utils-ai']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: names re-exported with export { } from are checked', async () => {
   const dir = makeProject({
     ...fakeReact,
