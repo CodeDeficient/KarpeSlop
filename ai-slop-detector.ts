@@ -248,6 +248,13 @@ export class ConfigError extends Error {}
 /** A command-line flag with a value KarpeSlop does not accept. */
 export class UsageError extends Error {}
 
+const KNOWN_FLAGS = new Set(['--help', '-h', '/?', '--version', '-v', '--quiet', '-q', '--strict', '-s']);
+
+/** Flags KarpeSlop does not know. A typo such as `--stirct` would otherwise run without the option. */
+export function unknownFlags(flagArgs: readonly string[]): string[] {
+  return flagArgs.filter(arg => !KNOWN_FLAGS.has(arg) && !arg.startsWith('--fail-on='));
+}
+
 /** The severity named by `--fail-on=<severity>`, high when absent. Throws on an unknown value. */
 export function failOnFrom(flagArgs: readonly string[]): Severity {
   const flag = flagArgs.filter(arg => arg.startsWith('--fail-on=')).at(-1);
@@ -414,7 +421,11 @@ class AISlopDetector {
           });
         }
 
+        const knownIds = new Set([...RULES.map(rule => rule.id), 'fresh_package_version', ...this.customPatterns.map(pattern => pattern.id)]);
         for (const [ruleId, severity] of Object.entries(this.config.severityOverrides ?? {})) {
+          if (!knownIds.has(ruleId)) {
+            console.warn(`${path.basename(configPath)}: severityOverrides.${ruleId} does not name a rule and has no effect. Run karpeslop --help for the rule ids.`);
+          }
           this.severityOverrides.set(ruleId, severity);
         }
 
@@ -1074,6 +1085,13 @@ async function runIfMain() {
   if (flagArgs.includes('--version') || flagArgs.includes('-v')) {
     console.log(`karpeslop/${ownVersion()} ${process.platform}-${process.arch} node-${process.version}`);
     process.exit(0);
+  }
+
+  const unknown = unknownFlags(flagArgs);
+  if (unknown.length > 0) {
+    console.error(`KarpeSlop: unknown option${unknown.length === 1 ? '' : 's'} ${unknown.map(flag => `'${flag}'`).join(', ')}. ` +
+      'Run karpeslop --help for the list, or put paths that start with "-" after --.');
+    process.exit(1);
   }
 
   let detector: AISlopDetector;

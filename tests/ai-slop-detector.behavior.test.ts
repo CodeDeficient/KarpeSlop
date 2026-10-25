@@ -18,6 +18,7 @@ import {
   shouldAnalyzePathInQuietMode,
   splitCliArgs,
   uniqueRealFiles,
+  unknownFlags,
 } from '../ai-slop-detector.ts';
 import { npmRegistryLookup } from '../imports.ts';
 
@@ -591,6 +592,36 @@ test('exit code: high and critical fail by default, --fail-on moves the threshol
   assert.equal(failOnFrom([]), 'high');
   assert.equal(failOnFrom(['--fail-on=low', '--fail-on=medium']), 'medium');
   assert.throws(() => failOnFrom(['--fail-on=warning']), /--fail-on must be one of: critical, high, medium, low/);
+});
+
+test('unknown flags are rejected instead of silently ignored', () => {
+  assert.deepEqual(unknownFlags(['--quiet', '-s', '--fail-on=low']), []);
+  assert.deepEqual(unknownFlags(['--stirct', '--json', '-dash-file.ts']), ['--stirct', '--json', '-dash-file.ts']);
+  const result = spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--stirct'],
+    { encoding: 'utf-8', cwd: os.tmpdir(), env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /unknown option '--stirct'/);
+  assert.equal(result.stdout.includes('Scanning'), false);
+});
+
+test('a severityOverrides key that is not a rule id is reported as a warning', () => {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-override-'));
+  fs.writeFileSync(path.join(projectDir, '.karpesloprc.json'), JSON.stringify({ severityOverrides: { type_asertion: 'off', type_assertion: 'low' } }), 'utf-8');
+  fs.writeFileSync(path.join(projectDir, 'index.ts'), 'export const n = (v: unknown) => v as number;\n', 'utf-8');
+  const result = spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts')],
+    { encoding: 'utf-8', cwd: projectDir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+  try {
+    assert.match(result.stderr, /severityOverrides\.type_asertion does not name a rule/);
+    assert.equal(result.stderr.includes('severityOverrides.type_assertion '), false);
+  } finally {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
 });
 
 test('a cast alone does not fail the run unless --fail-on=medium is given', () => {
