@@ -30,6 +30,8 @@ const globEscape = glob.escape;
 
 const SEVERITIES: readonly Severity[] = ['critical', 'high', 'medium', 'low'];
 const OVERRIDE_SEVERITIES: ReadonlyArray<Severity | 'off'> = [...SEVERITIES, 'off'];
+/** Every rule id KarpeSlop reports itself. fresh_package_version comes from the registry check, not RULES. */
+const BUILT_IN_RULE_IDS: ReadonlySet<string> = new Set([...RULES.map(rule => rule.id), 'fresh_package_version']);
 
 interface AISlopIssue {
   type: string;
@@ -175,12 +177,14 @@ export function hasOnlyFreshPackageWarnings(
 }
 
 /**
- * Exit code for a finished scan: 1 when anything at medium severity or above
- * was found, ignoring package-freshness warnings. Low-severity findings are
- * informational and never fail a build.
+ * Exit code for a finished scan: 1 when anything at `failOn` severity or above
+ * was found, ignoring package-freshness warnings. The default is high: medium
+ * and low findings (a cast, an `any`, a TODO) are worth reviewing, but healthy
+ * codebases have them, so they do not fail a build unless asked to.
  */
-export function exitCodeFor(issues: ReadonlyArray<Pick<AISlopIssue, 'type' | 'severity'>>): number {
-  return issues.some(issue => issue.type !== 'fresh_package_version' && issue.severity !== 'low') ? 1 : 0;
+export function exitCodeFor(issues: ReadonlyArray<Pick<AISlopIssue, 'type' | 'severity'>>, failOn: Severity = 'high'): number {
+  const threshold = SEVERITIES.indexOf(failOn);
+  return issues.some(issue => issue.type !== 'fresh_package_version' && SEVERITIES.indexOf(issue.severity) <= threshold) ? 1 : 0;
 }
 
 /**
@@ -241,6 +245,18 @@ function isCliPath(filePath: string, content: string): boolean {
 /** A .karpesloprc.json that cannot be read or does not validate. */
 export class ConfigError extends Error {}
 
+/** A command-line flag with a value KarpeSlop does not accept. */
+export class UsageError extends Error {}
+
+/** The severity named by `--fail-on=<severity>`, high when absent. Throws on an unknown value. */
+export function failOnFrom(flagArgs: readonly string[]): Severity {
+  const flag = flagArgs.filter(arg => arg.startsWith('--fail-on=')).at(-1);
+  if (flag === undefined) return 'high';
+  const value = flag.slice('--fail-on='.length);
+  if (!isSeverity(value)) throw new UsageError(`--fail-on must be one of: ${SEVERITIES.join(', ')} (got '${value}')`);
+  return value;
+}
+
 class AISlopDetector {
   private issues: AISlopIssue[] = [];
   private targetExtensions = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs'];
@@ -284,6 +300,7 @@ class AISlopDetector {
       if (!Array.isArray(cfg.customPatterns)) {
         throw new Error('customPatterns must be an array');
       }
+      const customIds = new Set<string>();
       result.customPatterns = cfg.customPatterns.map((entry: unknown, i: number) => {
         const pattern = asRecord(entry) ?? {};
         const { id, message, severity } = pattern;
@@ -291,6 +308,14 @@ class AISlopDetector {
         if (typeof id !== 'string' || id === '') {
           throw new Error(`customPatterns[${i}].id must be a string`);
         }
+        // A shared id would make severityOverrides and the exit code treat two rules as one.
+        if (BUILT_IN_RULE_IDS.has(id)) {
+          throw new Error(`customPatterns[${i}].id '${id}' is a built-in rule id; choose another`);
+        }
+        if (customIds.has(id)) {
+          throw new Error(`customPatterns[${i}].id '${id}' is used by another custom pattern`);
+        }
+        customIds.add(id);
         if (typeof source !== 'string' || source === '') {
           throw new Error(`customPatterns[${i}].pattern must be a string`);
         }
@@ -1014,12 +1039,14 @@ Options:
   --help, -h     Show this help message
   --quiet, -q    Scan only core app directories (app/, components/, lib/, hooks/, services/, src/, at any depth), skip tests
   --strict, -s   Exit with code 2 if critical findings (wrong imports, nonexistent packages) are present
+  --fail-on=<severity>
+                 Lowest severity that fails the run with exit 1: critical, high (default), medium or low
   --version, -v  Show version information
   --             End of flags; treat remaining args as paths (even if they start with -)
 
 Exit codes:
-  0 - No findings at medium severity or above (package-age warnings never fail)
-  1 - Findings at medium severity or above
+  0 - No findings at the --fail-on severity or above (package-age warnings never fail)
+  1 - Findings at the --fail-on severity (default high) or above
   2 - Critical findings (--strict only)
 
 Rules:
@@ -1057,6 +1084,14 @@ async function runIfMain() {
     console.error(`KarpeSlop: ${error.message}`);
     process.exit(1);
   }
+  let failOn: Severity;
+  try {
+    failOn = failOnFrom(flagArgs);
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error;
+    console.error(`KarpeSlop: ${error.message}`);
+    process.exit(1);
+  }
   const quiet = flagArgs.includes('--quiet') || flagArgs.includes('-q');
   const strict = flagArgs.includes('--strict') || flagArgs.includes('-s') || detector.getConfig().blockOnCritical === true;
 
@@ -1072,7 +1107,7 @@ async function runIfMain() {
       process.exit(2);
     }
 
-    process.exit(exitCodeFor(issues));
+    process.exit(exitCodeFor(issues, failOn));
   } catch (error) {
     console.error('KarpeSlop failed:', error);
     process.exit(1);
