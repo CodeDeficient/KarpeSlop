@@ -1,0 +1,12 @@
+#!/bin/sh
+# KarpeSlop pre-commit hook.
+# Copy to .git/hooks/pre-commit (or call it from husky or lint-staged) and make it executable.
+#
+# Blocks the commit on critical findings (imports or packages that do not
+# exist), and on any error that stops the scan. Use --fail-on=high to block
+# on high-severity findings too.
+
+if ! npx karpeslop@latest --fail-on=critical --no-report; then
+  echo "KarpeSlop: commit blocked by the findings or error above."
+  exit 1
+fi
