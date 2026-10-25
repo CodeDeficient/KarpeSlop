@@ -12,6 +12,7 @@ import {
   findUnsafeAssertions,
   hasOnlyFreshPackageWarnings,
   isExcludedPath,
+  leavesRoot,
   isRegistryBackedLockfileEntry,
   parseVersionRange,
   pLimit,
@@ -80,6 +81,36 @@ test('isExcludedPath uses segment-based matching so dist anywhere in path is exc
   assert.equal(isExcludedPath('/repo/node_modules/lodash/index.ts', rootDir), true);
   assert.equal(isExcludedPath('/repo/coverage/lcov-report/index.ts', rootDir), true);
   assert.equal(isExcludedPath('/repo/src/components/Button.tsx', rootDir), false);
+});
+
+test('leavesRoot tells a path outside the root from one inside it', () => {
+  for (const outside of ['..', '../x.ts', '..\\x.ts', path.resolve('/abs/x.ts')]) assert.equal(leavesRoot(outside), true, outside);
+  for (const inside of ['src/x.ts', '..cache/x.ts', '...x.ts', '']) assert.equal(leavesRoot(inside), false, inside);
+  // path.relative gives an absolute path for a file on another drive.
+  if (process.platform === 'win32') assert.equal(leavesRoot('D:\\pkg\\x.ts'), true);
+  else assert.equal(leavesRoot('a:b/util.ts'), false);
+});
+
+test('isExcludedPath skips build, out and temp only at the root or next to a package.json', () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-output-'));
+  fs.mkdirSync(path.join(rootDir, 'packages', 'next', 'src', 'build'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'packages', 'next', 'package.json'), '{}');
+  try {
+    assert.equal(isExcludedPath(path.join(rootDir, 'build', 'index.js'), rootDir), true);
+    assert.equal(isExcludedPath(path.join(rootDir, 'out', 'page.js'), rootDir), true);
+    assert.equal(isExcludedPath(path.join(rootDir, 'packages', 'next', 'build', 'index.js'), rootDir), true);
+    assert.equal(isExcludedPath(path.join(rootDir, 'packages', 'next', 'src', 'build', 'webpack.ts'), rootDir), false);
+    assert.equal(isExcludedPath(path.join(rootDir, 'scripts', 'temp', 'clean.ts'), rootDir), false);
+    assert.equal(isExcludedPath(path.join(rootDir, 'src', 'build.ts'), rootDir), false);
+    // An explicit target outside the scan root is checked against its own folders.
+    const otherRoot = path.join(rootDir, 'packages', 'next', 'src');
+    assert.equal(isExcludedPath(path.join(rootDir, 'packages', 'next', 'build', 'index.js'), otherRoot, true), true);
+    assert.equal(isExcludedPath(path.join(rootDir, 'scripts', 'temp', 'clean.ts'), otherRoot, true), false);
+    // At the filesystem root, the package.json looked for is /package.json, not one in the current directory.
+    if (process.platform !== 'win32' && !fs.existsSync('/package.json')) assert.equal(isExcludedPath('/out/lib/x.js', rootDir, true), false);
+  } finally {
+    fs.rmSync(rootDir, { recursive: true, force: true });
+  }
 });
 
 test('isExcludedPath scans hand-written types/ folders but still skips .d.ts files', () => {
