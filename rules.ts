@@ -408,16 +408,17 @@ function unsafeAssertionsIn(sourceFile: ts.SourceFile, fileName: string): Unsafe
 
   const visit = (node: ts.Node) => {
     if (isCast(node)) {
+      const start = node.getStart(sourceFile);
+      const { line, character } = sourceFile.getLineAndCharacterOfPosition(start);
       for (const cast of classifyCast(node)) {
         if (!UNSAFE_ASSERTION_TYPES.has(cast.type)) continue;
         const rule = getRule(cast.type);
-        const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
         findings.push({
           type: cast.type,
           file: fileName,
           line: line + 1,
           column: character + 1,
-          code: sourceText.slice(node.getStart(sourceFile), node.end),
+          code: sourceText.slice(start, node.end),
           message: rule?.message ?? cast.type,
           severity: rule?.severity ?? 'high',
           assertionForm: cast.form
