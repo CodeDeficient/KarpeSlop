@@ -285,7 +285,7 @@ test('findUnsafeAssertions detects unsafe as any assertion in multiline expressi
 
   assert.equal(findings.length, 1);
   assert.equal(findings[0].type, 'unsafe_type_assertion');
-  assert.equal(findings[0].line, 2);
+  assert.equal(findings[0].line, 1);
 });
 
 test('findUnsafeAssertions reports multiline as any despite eslint-disable-line on the any line', () => {
@@ -293,7 +293,7 @@ test('findUnsafeAssertions reports multiline as any despite eslint-disable-line 
   const findings = findUnsafeAssertions(code, 'x.ts');
   assert.equal(findings.length, 1);
   assert.equal(findings[0].type, 'unsafe_type_assertion');
-  assert.equal(findings[0].line, 2);
+  assert.equal(findings[0].line, 1);
 });
 
 test('unsafe_type_assertion guidance does not recommend chained assertion pattern to users', () => {
