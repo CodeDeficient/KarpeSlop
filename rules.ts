@@ -796,6 +796,25 @@ function isConsoleCall(call: ts.CallExpression, methods: RegExp): boolean {
     methods.test(callee.name.text);
 }
 
+/** `[]`, `{}` or `''`: a result a caller cannot tell apart from "nothing found". */
+function isEmptyResult(expr: ts.Expression | undefined): boolean {
+  if (expr === undefined) return false;
+  const inner = unwrapExpression(expr);
+  if (ts.isArrayLiteralExpression(inner)) return inner.elements.length === 0;
+  if (ts.isObjectLiteralExpression(inner)) return inner.properties.length === 0;
+  return (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner)) && inner.text === '';
+}
+
+/** One or more console calls, optionally followed by `return []`, `return {}` or `return ''`. */
+function isLogOnlyCatch(statements: ts.NodeArray<ts.Statement>): boolean {
+  const last = statements.at(-1);
+  const logs = last !== undefined && ts.isReturnStatement(last) && isEmptyResult(last.expression)
+    ? statements.slice(0, -1)
+    : statements;
+  return logs.length > 0 && logs.every(statement => ts.isExpressionStatement(statement) &&
+    ts.isCallExpression(statement.expression) && isConsoleCall(statement.expression, /^(log|debug|info|warn|error|trace)$/));
+}
+
 function isFunctionWithBody(node: ts.Node): node is ts.FunctionLikeDeclaration & { body: ts.Block } {
   return (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isFunctionExpression(node) ||
     ts.isArrowFunction(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node) ||
@@ -1053,11 +1072,12 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       report('empty_catch', node);
     }
 
-    // catch (error) { console.error('Failed', error); } and nothing else
-    if (ts.isCatchClause(node) && node.block.statements.length > 0 &&
-      node.block.statements.every(statement => ts.isExpressionStatement(statement) &&
-        ts.isCallExpression(statement.expression) && isConsoleCall(statement.expression, /^(log|debug|info|warn|error|trace)$/)) &&
-      commentsWithin(node.block).length === 0 && !isFallbackCatch(node)) {
+    // catch (error) { console.error('Failed', error); } and nothing else, or
+    // followed by `return []`: an empty result reads as success to the caller.
+    // A catch that returns never reaches the code after the try, so that code is no fallback.
+    if (ts.isCatchClause(node) && isLogOnlyCatch(node.block.statements) &&
+      commentsWithin(node.block).length === 0 &&
+      (ts.isReturnStatement(node.block.statements[node.block.statements.length - 1]) || !isFallbackCatch(node))) {
       report('swallowed_error', node);
     }
 
