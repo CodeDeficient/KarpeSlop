@@ -22,7 +22,7 @@ import {
   type Severity,
   type UnsafeAssertionFinding
 } from './rules.ts';
-import { checkImports, npmRegistryLookup, type RegistryLookup } from './imports.ts';
+import { checkImports, npmRegistryLookup, NPM_REGISTRY_HEADERS, type RegistryLookup } from './imports.ts';
 
 const globSync = glob.sync;
 const globEscape = glob.escape;
@@ -755,7 +755,7 @@ class AISlopDetector {
       const timer = setTimeout(() => controller.abort(), 5000);
       // The timeout covers the body as well as the headers.
       try {
-        const response = await fetch(url, { signal: controller.signal });
+        const response = await fetch(url, { headers: NPM_REGISTRY_HEADERS, signal: controller.signal });
         if (!response.ok) return null;
         const body: unknown = await response.json();
         for (const [key, value] of Object.entries(asRecord(asRecord(body)?.time) ?? {})) {

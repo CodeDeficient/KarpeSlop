@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { builtinModules } from 'module';
 import ts from 'typescript';
+import { fileURLToPath } from 'url';
 
 export interface ImportFinding {
   type: 'hallucinated_import' | 'undeclared_dependency' | 'nonexistent_package';
@@ -438,6 +439,21 @@ function missingExportFinding(
   };
 }
 
+function ownVersion(): string {
+  try {
+    const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
+    const version: unknown = JSON.parse(fs.readFileSync(packagePath, 'utf8')).version;
+    return typeof version === 'string' ? version : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/** Sent with every npm registry request, as the registry asks of programmatic clients. */
+export const NPM_REGISTRY_HEADERS: Readonly<Record<string, string>> = {
+  'User-Agent': `karpeslop/${ownVersion()}`
+};
+
 /** Look up a package on the public npm registry. Network errors give 'unknown'. */
 export async function npmRegistryLookup(packageName: string): Promise<RegistryStatus> {
   if (process.env.KARPESLOP_OFFLINE === '1') return 'unknown';
@@ -446,6 +462,7 @@ export async function npmRegistryLookup(packageName: string): Promise<RegistrySt
   try {
     const response = await fetch(`https://registry.npmjs.org/${packageName.replace('/', '%2f')}`, {
       method: 'HEAD',
+      headers: NPM_REGISTRY_HEADERS,
       signal: controller.signal
     });
     if (response.status === 404) return 'missing';
