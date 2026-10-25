@@ -14,7 +14,9 @@ mkdir -p "$hooks_dir"
 
 if [ -e "$target" ] || [ -L "$target" ]; then
   printf 'Refusing to replace existing hook: %s\n' "$target" >&2
-  printf 'Chain %s into that hook manually; do not rerun this setup script.\n' "$repo_root/.githooks/pre-push" >&2
+  printf 'To keep it, move it to %s and rerun this script.\n' "$target.local" >&2
+  printf 'The KarpeSlop hook runs pre-push.local after its branch check, with the same input.\n' >&2
+  printf 'Do not call the KarpeSlop hook from your own hook: if yours reads stdin first, the check sees no refs.\n' >&2
   exit 1
 fi
 
