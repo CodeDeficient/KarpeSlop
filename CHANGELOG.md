@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- `swallowed_error` also reports a catch that logs and then returns `[]`, `{}` or `''`. The caller gets what looks like an empty success. `return null` is still not reported, because a caller can check for it.
 - `empty_catch` skips `catch (_)` and `catch (_error)`. An underscore name is the usual way to mark a binding as unused on purpose, the same signal as a comment.
 - The scan starts with "Scanning..." instead of "Scanning for AI slop patterns...": the findings describe code, not who wrote it. The report file is still `ai-slop-report.json`, so existing CI keeps working.
 - The example GitHub workflow moved to `examples/github-workflow.yml`, and its PR-comment job asks for `pull-requests: write`, without which the comment could not be posted. This repository's own KarpeSlop check now scans its source with the checked-out code instead of the published package, which scanned no files here.
