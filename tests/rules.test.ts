@@ -87,6 +87,36 @@ test('placeholder: empty no-op callbacks are not placeholders', () => {
   assert.equal(countOf('const noop = () => {};\nfunction onIdle() {}\n', 'placeholder_implementation'), 0);
 });
 
+test('placeholder: a TODO on a later line of a block comment, or a cast constant, is reported', () => {
+  for (const code of [
+    'function rate(kg: number): number {\n  /*\n   * TODO: add shipping rates\n   */\n  return 0;\n}',
+    'function result(): Result {\n  // TODO: call the service\n  return { ok: true } as Result;\n}',
+    'function config() {\n  // TODO: read the file\n  return (({ debug: false }) satisfies Config);\n}',
+    'function enabled(): boolean {\n  // TODO: check the flag\n  return !0;\n}'
+  ]) {
+    assert.equal(countOf(code, 'placeholder_implementation'), 1, code);
+  }
+});
+
+test('placeholder: a body that only warns and returns success is reported', () => {
+  assert.equal(countOf("function sendEmail(to: string) {\n  console.warn('email is not wired up', to);\n  return true;\n}", 'placeholder_implementation'), 1);
+});
+
+test('placeholder: setTimeout in a comment or string is not a fake delay', () => {
+  const code = 'async function save(x: string) {\n  await new Promise(resolve => {\n    /* no setTimeout( here */\n    resolve(x);\n  });\n  return true;\n}';
+  assert.equal(countOf(code, 'placeholder_implementation'), 0);
+});
+
+test('placeholder: statements in unbraced branches count toward the body size', () => {
+  const code = 'function load(id: string) {\n  // Simulate the request in tests\n  if (cache.has(id)) return cache.get(id);\n  for (const s of sources) if (s.has(id)) return s.get(id);\n  return null;\n}';
+  assert.equal(countOf(code, 'placeholder_implementation'), 0);
+});
+
+test('placeholder: a comment in a nested function is reported only on that function', () => {
+  const code = 'function useLoader() {\n  const load = async () => {\n    // Simulate API call\n    await sleep(500);\n    return [{ id: 1 }];\n  };\n  return load;\n}';
+  assert.equal(countOf(code, 'placeholder_implementation'), 1);
+});
+
 // ---------------------------------------------------------------------------
 // elided_code_comment
 // ---------------------------------------------------------------------------

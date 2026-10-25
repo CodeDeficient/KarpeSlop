@@ -446,7 +446,10 @@ function unsafeAssertionsIn(sourceFile: ts.SourceFile, fileName: string): Unsafe
 // Per-file analysis
 // ---------------------------------------------------------------------------
 
-/** Says the body is unfinished. Counts only when the body is trivial (a constant return, a throw, nothing). */
+/**
+ * Says the body is unfinished. Counts only when the body is trivial (a constant return, a throw, nothing).
+ * Multi-line, so a TODO on any line of a block comment counts.
+ */
 const PLACEHOLDER_COMMENT = new RegExp([
   String.raw`\bimplement(ation)?\s+(goes\s+|logic\s+)?here\b`,
   String.raw`\byour\s+(own\s+)?(code|logic|implementation)\b`,
@@ -454,12 +457,12 @@ const PLACEHOLDER_COMMENT = new RegExp([
   String.raw`\b(logic|code|implementation)\b.{0,60}\bgoes\s+here\b`,
   String.raw`\bnot\s+(yet\s+)?implemented\b`,
   String.raw`\bimplement\s+(this|me|later|properly)\b`,
-  String.raw`^(TODO|FIXME)\b`,
+  String.raw`^\s*(TODO|FIXME)\b`,
   String.raw`\bfor\s+now\b`,
   String.raw`\b(placeholder|stub)\s+(implementation|logic|code|body|function|method|for\s+now)\b`,
-  String.raw`^(placeholder|stub|dummy|mock)(\s+(value|data|response|implementation))?(\s+for\s+now)?\.?$`,
+  String.raw`^\s*(placeholder|stub|dummy|mock)(\s+(value|data|response|implementation))?(\s+for\s+now)?\.?\s*$`,
   String.raw`\bstubbed(\s+out)?\b`
-].join('|'), 'i');
+].join('|'), 'im');
 
 /**
  * Says the real implementation lives somewhere else ("in a real app you
@@ -575,12 +578,21 @@ function isFillerComment(comment: CommentInfo): boolean {
   return tagLines > 0;
 }
 
+/** Strips parentheses, `await`, casts and `satisfies`, which don't change what a constant is. */
+function unwrapExpression(expr: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(expr) || ts.isAwaitExpression(expr) || ts.isAsExpression(expr) ||
+    ts.isSatisfiesExpression(expr) || ts.isTypeAssertionExpression(expr) || ts.isNonNullExpression(expr)) {
+    expr = expr.expression;
+  }
+  return expr;
+}
+
 /** A constant: a literal, or an array or object built only from literals. */
 function isTrivialExpression(expr: ts.Expression | undefined): boolean {
   if (expr === undefined) return true;
-  if (ts.isParenthesizedExpression(expr) || ts.isAwaitExpression(expr)) return isTrivialExpression(expr.expression);
+  expr = unwrapExpression(expr);
   if (ts.isNumericLiteral(expr) || ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) return true;
-  if (ts.isPrefixUnaryExpression(expr)) return ts.isNumericLiteral(expr.operand);
+  if (ts.isPrefixUnaryExpression(expr)) return isTrivialExpression(expr.operand);
   if (ts.isIdentifier(expr)) return expr.text === 'undefined';
   if (ts.isArrayLiteralExpression(expr)) return expr.elements.every(element => isTrivialExpression(element));
   if (ts.isObjectLiteralExpression(expr)) {
@@ -594,7 +606,7 @@ function isTrivialExpression(expr: ts.Expression | undefined): boolean {
 /** A constant other than undefined/null/empty: `true`, `{ success: true }`, `[{ id: 1 }]`. */
 function isMeaningfulConstant(expr: ts.Expression | undefined): boolean {
   if (expr === undefined || !isTrivialExpression(expr)) return false;
-  const inner = ts.isParenthesizedExpression(expr) || ts.isAwaitExpression(expr) ? expr.expression : expr;
+  const inner = unwrapExpression(expr);
   if (ts.isIdentifier(inner) || inner.kind === ts.SyntaxKind.NullKeyword) return false;
   if (ts.isArrayLiteralExpression(inner)) return inner.elements.length > 0;
   if (ts.isObjectLiteralExpression(inner)) return inner.properties.length > 0;
@@ -612,7 +624,12 @@ function isFakeDelay(statement: ts.Statement): boolean {
   if (!ts.isNewExpression(awaited) || !ts.isIdentifier(awaited.expression) || awaited.expression.text !== 'Promise') return false;
   const executor = awaited.arguments?.[0];
   return executor !== undefined && (ts.isArrowFunction(executor) || ts.isFunctionExpression(executor)) &&
-    /\bsetTimeout\s*\(/.test(executor.body.getText());
+    callsSetTimeout(executor.body);
+}
+
+function callsSetTimeout(node: ts.Node): boolean {
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'setTimeout') return true;
+  return ts.forEachChild(node, callsSetTimeout) ?? false;
 }
 
 function isNotImplementedThrow(statement: ts.Statement): boolean {
@@ -638,12 +655,20 @@ function isTrivialStatement(statement: ts.Statement): boolean {
   return isFakeDelay(statement);
 }
 
-/** Statements in a block, counting those in nested blocks. */
+/** Statements in a block, counting those in nested blocks and unbraced branches. */
 function statementCount(block: ts.Block): number {
   let count = 0;
+  const countBranch = (branch: ts.Statement | undefined) => {
+    if (branch !== undefined && !ts.isBlock(branch)) count++;
+  };
   const visit = (node: ts.Node) => {
     if (ts.isFunctionLike(node)) return;
-    if (ts.isBlock(node)) count += node.statements.length;
+    if (ts.isBlock(node) || ts.isCaseOrDefaultClause(node)) count += node.statements.length;
+    if (ts.isIfStatement(node)) {
+      countBranch(node.thenStatement);
+      countBranch(node.elseStatement);
+    }
+    if (ts.isIterationStatement(node, false) || ts.isLabeledStatement(node)) countBranch(node.statement);
     ts.forEachChild(node, visit);
   };
   ts.forEachChild(block, visit);
@@ -660,7 +685,18 @@ function isFakeWork(node: ts.FunctionLikeDeclaration, statements: ts.NodeArray<t
   if (!ts.isReturnStatement(last) || !isMeaningfulConstant(last.expression)) return false;
   return statements.slice(0, -1).every(statement => isFakeDelay(statement) ||
     (ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression) &&
-      isConsoleCall(statement.expression, /^(log|debug|info)$/)));
+      isConsoleCall(statement.expression, /^(log|debug|info|warn)$/)));
+}
+
+/** The outermost functions nested in a body. Their comments describe them, not the body. */
+function nestedFunctions(body: ts.Block): ts.Node[] {
+  const found: ts.Node[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionLike(node)) found.push(node);
+    else ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(body, visit);
+  return found;
 }
 
 function isConsoleCall(call: ts.CallExpression, methods: RegExp): boolean {
@@ -875,7 +911,8 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
   const visit = (node: ts.Node) => {
     if (isFunctionWithBody(node)) {
       const body = node.body;
-      const inner = commentsWithin(body);
+      const nested = nestedFunctions(body);
+      const inner = commentsWithin(body).filter(c => !nested.some(fn => fn.pos <= c.pos && c.end <= fn.end));
       const statements = body.statements;
       const allTrivial = statements.length <= 2 && statements.every(isTrivialStatement);
       const commentSaysPlaceholder = inner.some(c => PLACEHOLDER_COMMENT.test(c.body));
