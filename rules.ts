@@ -1074,8 +1074,10 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
 
     // catch (error) { console.error('Failed', error); } and nothing else, or
     // followed by `return []`: an empty result reads as success to the caller.
+    // A catch that returns never reaches the code after the try, so that code is no fallback.
     if (ts.isCatchClause(node) && isLogOnlyCatch(node.block.statements) &&
-      commentsWithin(node.block).length === 0 && !isFallbackCatch(node)) {
+      commentsWithin(node.block).length === 0 &&
+      (ts.isReturnStatement(node.block.statements[node.block.statements.length - 1]) || !isFallbackCatch(node))) {
       report('swallowed_error', node);
     }
 

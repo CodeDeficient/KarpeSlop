@@ -208,7 +208,9 @@ test('swallowed error: a catch that logs and returns an empty result is reported
   for (const code of [
     'async function f() {\n  try { return await load(); } catch (error) {\n    console.error("Failed to fetch posts", error);\n    return [];\n  }\n}',
     'function f() { try { return read(); } catch (e) { console.warn(e); return {}; } }',
-    "function f() { try { return read(); } catch (e) { console.log(e); return ''; } }"
+    "function f() { try { return read(); } catch (e) { console.log(e); return ''; } }",
+    // The catch returns, so the fallback after the try never runs for it.
+    'function f() {\n  try { if (cached) return cached; } catch (e) { console.error(e); return []; }\n  return load();\n}'
   ]) {
     assert.equal(countOf(code, 'swallowed_error'), 1, code);
   }
