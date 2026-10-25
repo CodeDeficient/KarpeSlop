@@ -18,6 +18,7 @@ import {
   analyzeSource,
   findUnsafeAssertions,
   getRule,
+  isFixturePath,
   isTestPath,
   type Severity,
   type UnsafeAssertionFinding
@@ -599,7 +600,8 @@ class AISlopDetector {
   }
 
   private async analyzeImports(codeFiles: string[], quiet: boolean): Promise<void> {
-    const files = quiet ? codeFiles.filter(file => !this.isTestFile(file)) : codeFiles;
+    // Fixture files are sample input, so their imports never need to resolve.
+    const files = codeFiles.filter(file => !(quiet && this.isTestFile(file)) && !isFixturePath(path.relative(this.rootDir, file)));
     const findings = await checkImports(files, this.rootDir, this.registryLookup);
     for (const finding of findings) {
       const rule = getRule(finding.type);

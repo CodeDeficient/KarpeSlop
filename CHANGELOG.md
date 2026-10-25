@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- `__fixtures__` and `__testfixtures__` folders count as test code, and their imports are not checked: they hold sample input such as codemod before/after files. TanStack Query's codemod fixtures produced 54 `undeclared_dependency` findings.
 - `hedging_comment` also recognizes "might not work", "seems to work" and "should handle most/all ...", and skips a hedge that links the issue it is about.
 - `todo_comment` skips markers that link a tracking issue (a URL, `#123`, `PROJ-123`, "issue 42"), which is what its own advice asks for.
 - `filler_comment` reports a stock opener ("This function is used to ...", "This component is responsible for ...") only when the rest of the summary repeats the declaration that follows. A doc comment that opens that way and then explains something is no longer reported.
