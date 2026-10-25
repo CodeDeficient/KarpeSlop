@@ -216,16 +216,17 @@ export function isTestPath(filePath: string): boolean {
     /(^|\/)test-[^/]*$/.test(normalized);
 }
 
-/** Casts and `any` exist only in TypeScript, so those rules skip JavaScript files. */
-function isTypeScriptFile(fileName: string): boolean {
-  return /\.[cm]?tsx?$/.test(fileName);
-}
-
 export function scriptKindFor(fileName: string): ts.ScriptKind {
   if (fileName.endsWith('.tsx')) return ts.ScriptKind.TSX;
   if (fileName.endsWith('.jsx')) return ts.ScriptKind.JSX;
   if (/\.[cm]?js$/.test(fileName)) return ts.ScriptKind.JS;
   return ts.ScriptKind.TS;
+}
+
+/** Casts and `any` exist only in TypeScript, so those rules skip JavaScript files. */
+function isTypeScriptFile(fileName: string): boolean {
+  const kind = scriptKindFor(fileName);
+  return kind === ts.ScriptKind.TS || kind === ts.ScriptKind.TSX;
 }
 
 // ---------------------------------------------------------------------------
