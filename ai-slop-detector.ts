@@ -118,10 +118,16 @@ export function parseVersionRange(version: string): { actualVersion: string; isR
 /**
  * Run an array of async tasks with bounded concurrency. Used to throttle
  * outbound HTTP calls to the npm registry (which rate-limits unauthenticated
- * callers at ~600 req/min). A task that rejects is logged and leaves its slot
- * undefined; the other tasks still run.
+ * callers at ~600 req/min). With onError, a task that rejects is reported
+ * there and leaves its slot undefined while the other tasks still run;
+ * without it, the first rejection rejects the whole call.
  */
-export async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number, shouldStop?: () => boolean): Promise<Array<T | undefined>> {
+export async function pLimit<T>(
+  tasks: (() => Promise<T>)[],
+  concurrency: number,
+  shouldStop?: () => boolean,
+  onError?: (error: unknown, index: number) => void
+): Promise<Array<T | undefined>> {
   const results: Array<T | undefined> = Array.from({ length: tasks.length }, () => undefined);
   let next = 0;
   const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
@@ -132,7 +138,8 @@ export async function pLimit<T>(tasks: (() => Promise<T>)[], concurrency: number
       try {
         results[i] = await tasks[i]();
       } catch (error) {
-        console.warn(`Task ${i} failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (onError === undefined) throw error;
+        onError(error, i);
       }
     }
   });
@@ -700,7 +707,11 @@ class AISlopDetector {
           .then(ageInfo => ({ scopeKey, sourceId, pkgName, version: actualVersion, ageInfo }))
       ),
       NPM_CONCURRENCY,
-      () => this.registryUnavailable
+      () => this.registryUnavailable,
+      (error, i) => {
+        const { pkgName, actualVersion } = entries[i];
+        console.warn(`Age check for ${pkgName}@${actualVersion} failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     );
 
     for (const ageInfoResult of ageInfos) {
