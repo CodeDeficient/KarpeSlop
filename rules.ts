@@ -1170,12 +1170,10 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
   return findings;
 }
 
-/** The first non-blank line of code after a comment ends. */
+/** The code after a comment: the rest of its line, or the next non-blank line. */
 function lineAfter(sourceFile: ts.SourceFile, comment: CommentInfo): string {
   const rest = sourceFile.text.slice(comment.end);
-  const newline = rest.indexOf('\n');
-  const following = newline === -1 ? '' : rest.slice(newline + 1);
-  return following.split('\n').find(line => line.trim() !== '')?.trim() ?? '';
+  return rest.split('\n').find(line => line.trim() !== '')?.trim() ?? '';
 }
 
 function isRestatingComment(sourceFile: ts.SourceFile, comment: CommentInfo): boolean {
