@@ -122,24 +122,33 @@ There are no inline suppression comments. A comment that silences the linter is 
 
 ## Contributing
 
-### Local git hooks
-
-Install the repository's shared hooks once after cloning:
-
 ```bash
-./scripts/setup-git-hooks.sh
+npm ci
+npm run typecheck
+npm test
 ```
 
-The pre-push hook blocks pushes targeting `main`/`master`. Use a feature branch and open a pull request instead. Existing hooks are never overwritten; setup stops if an unrelated pre-push hook already exists. To keep that hook, move it to `pre-push.local` in the same hooks directory and rerun setup: the KarpeSlop hook checks the refs first, then runs `pre-push.local` with the same arguments and ref records. Do not call the KarpeSlop hook from your own hook instead, because a hook that reads stdin first leaves the check with no refs and the push goes through. The local hook is a convenience that `--no-verify` skips; branch protection on the server is what actually keeps `main` safe. To update a previously installed KarpeSlop copy, find the active hooks directory with `git rev-parse --git-path hooks` and verify the installed path is a regular file, contains the `Managed by KarpeSlop setup-git-hooks.sh.` marker, and matches a committed version of `.githooks/pre-push`, which `for c in $(git rev-list HEAD -- .githooks/pre-push); do git show "$c:.githooks/pre-push" | cmp -s - "$(git rev-parse --git-path hooks)/pre-push" && echo "matches $c"; done` prints; only then move that managed file to the trash and rerun the setup script. Hooks installed before the marker was introduced cannot be identified automatically; preserve those files unless you independently confirm they are the old KarpeSlop hook. Only after that confirmation should you replace or chain it; otherwise leave unrelated hooks untouched.
+### Local git hooks
+
+Run `./scripts/setup-git-hooks.sh` once after cloning. It installs a pre-push hook that refuses pushes to `main` or `master`; open a pull request from a feature branch instead. `--no-verify` skips the hook, so branch protection on the server is what actually keeps `main` safe.
+
+The script never overwrites a hook it did not install, and stops if an unrelated `pre-push` hook exists. To keep yours, rename it to `pre-push.local` in the same hooks folder and run the script again: the KarpeSlop hook checks the refs first, then runs `pre-push.local` with the same arguments and input. Don't call the KarpeSlop hook from your own hook instead: a hook that reads stdin first leaves it no refs to check, and the push goes through.
+
+To update an installed copy, first check that it is an unmodified KarpeSlop hook: a regular file that contains `Managed by KarpeSlop setup-git-hooks.sh.` and matches a committed version of `.githooks/pre-push`. This prints the matching commit:
+
+```bash
+hook="$(git rev-parse --git-path hooks)/pre-push"
+for c in $(git rev-list HEAD -- .githooks/pre-push); do
+  git show "$c:.githooks/pre-push" | cmp -s - "$hook" && echo "matches $c"
+done
+```
+
+If it matches, move it to the trash and run the script again. Hooks installed before the marker existed can't be told apart from your own; leave them unless you are sure they are KarpeSlop's.
 
 ## License
 
 MIT
 
-## 💝 Support Development
+## Support
 
-Building and maintaining KarpeSlop takes time. If this tool saved you from shipping slop:
-
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/CodeDeficient?style=social)](https://github.com/sponsors/CodeDeficient)
-
-[☕ Buy me a coffee](https://github.com/sponsors/CodeDeficient) • Help keep the slop detector alive
+If KarpeSlop is useful to you, you can sponsor its development on [GitHub Sponsors](https://github.com/sponsors/CodeDeficient).
