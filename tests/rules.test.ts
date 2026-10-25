@@ -203,7 +203,8 @@ test('empty catch: a variable assigned in the try keeps its earlier value as the
   for (const code of [
     'function f(s: S) {\n  let recursive = true;\n  try {\n    recursive = isRecursive(s);\n  } catch {}\n  return recursive;\n}',
     'async function isDir(p: string) {\n  let dir;\n  try {\n    dir = (await stat(p)).isDirectory();\n  } catch {}\n  return dir;\n}',
-    'let als: unknown;\nfor (const probe of probes) {\n  try {\n    als = probe();\n  } catch {}\n  if (als) break;\n}'
+    'let als: unknown;\nfor (const probe of probes) {\n  try {\n    als = probe();\n  } catch {}\n  if (als) break;\n}',
+    'function f(src: S) {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n  ({ a = x } = src);\n  return a;\n}'
   ]) {
     assert.equal(countOf(code, 'empty_catch'), 0, code);
   }
@@ -212,7 +213,11 @@ test('empty catch: a variable assigned in the try keeps its earlier value as the
     'function f() {\n  try {\n    cache = load();\n  } catch {}\n  return cache;\n}',
     'function f() {\n  let x = 1;\n  try {\n    x = load();\n    save(x);\n  } catch {}\n  return x;\n}',
     'function f(res: R) {\n  let ok = false;\n  try {\n    ok = probe();\n  } catch {}\n  return res.ok;\n}',
-    'function f(a: boolean) {\n  if (a) { let x = 1; use(x); }\n  try {\n    x = load();\n  } catch {}\n  return x;\n}'
+    'function f(a: boolean) {\n  if (a) { let x = 1; use(x); }\n  try {\n    x = load();\n  } catch {}\n  return x;\n}',
+    // Written again, or read only by a callback's own parameter of the same name.
+    'function f(src: S) {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n  ({ x } = src);\n  [x] = [2];\n}',
+    'function f(xs: number[]) {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n  return xs.map((x) => x * 2);\n}',
+    'function f(xs: number[]) {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n  for (const x of xs) use(x);\n  if (xs.length) { const x = 2; use(x); }\n  xs.forEach(() => { var x = 3; use(x); });\n}'
   ]) {
     assert.equal(countOf(code, 'empty_catch'), 1, code);
   }
