@@ -530,11 +530,70 @@ const DIRECTIVE_COMMENT = /^\s*(@ts-|eslint|prettier|istanbul|c8\b|v8\b|webpack|
 
 const PLACEHOLDER_VALUE_PATTERNS: readonly RegExp[] = [
   /^<\s*your[\s_-][^>]+>$/i,
+  /^<\s*[A-Z][A-Z0-9_-]*(KEY|TOKEN|SECRET|PASSWORD|ID|URL)\s*>$/,
+  /^(bearer|basic|token)\s+(<[^>]+>|your[_-][\w-]+|x{3,}|\.{3})$/i,
   /^your[_-](\w+[_-])*(api[_-]?key|key|token|secret|password|passwd|url|uri|endpoint|id|domain|project|bucket|account|client|dsn|webhook)([_-]here)?$/i,
-  /^(insert|replace|put|enter|paste)[_-](with[_-])?(your|the)[_-][\w-]+$/i,
+  /^(insert|replace|put|enter|paste|add)[_-](with[_-])?(your|the)[_-][\w-]+$/i,
+  /^(insert|replace|put|enter|paste|add)[_-]([a-z0-9]+[_-])*(api[_-]?key|key|token|secret|password|id|url)[_-]here$/i,
   /^(sk|pk|rk|ghp|xox[abp])[-_]?(x{6,}|\.{3,}|\*{6,})/i,
-  /^(xxx{2,}|changeme|change[_-]me|replace[_-]?me)$/i
+  /^(xxx{2,}|changeme|change[_-]me|replace[_-]?me)$/i,
+  // Credentials and domains that are templates: postgres://user:password@..., you@yourdomain.com
+  /:\/\/(user(name)?|admin|root|db_?user):(password|pass|secret|changeme|pwd)@/i,
+  /[@.](your[-_]?(domain|company|app|project|site|org))\.(com|org|net|io|co|dev|app)\b/i,
+  // https://hooks.slack.com/services/XXX/YYY/ZZZ
+  /^https?:\/\/\S*\/(X{3,}|x{3,}|Y{3,}|Z{3,})(?=[/?#&]|$)/
 ];
+
+/** A reserved example domain (RFC 2606). Reported only where a value is stored, not passed to a call (`new URL(p, 'http://example.com')`). */
+const EXAMPLE_URL = /^https?:\/\/([\w-]+\.)*example\.(com|org|net)(?=[/:?#]|$)/i;
+
+/** Environment variables that hold secrets. */
+const SECRET_ENV_NAME = /(SECRET|PASSWORD|PASSWD|TOKEN|(API|PRIVATE|SECRET|ACCESS|SIGNING|ENCRYPTION)_KEY)$/i;
+
+/** `process.env.JWT_SECRET` or `import.meta.env.VITE_API_KEY`, when the name is a secret. */
+function isSecretEnvRead(expr: ts.Expression): boolean {
+  const current = ts.isParenthesizedExpression(expr) ? expr.expression : expr;
+  let name: string | undefined;
+  let object: ts.Expression | undefined;
+  if (ts.isPropertyAccessExpression(current)) {
+    name = current.name.text;
+    object = current.expression;
+  } else if (ts.isElementAccessExpression(current) && ts.isStringLiteralLike(current.argumentExpression)) {
+    name = current.argumentExpression.text;
+    object = current.expression;
+  }
+  if (name === undefined || object === undefined || !SECRET_ENV_NAME.test(name)) return false;
+  const objectText = object.getText();
+  return objectText === 'process.env' || objectText === 'import.meta.env';
+}
+
+/** `process.env.JWT_SECRET || 'dev-secret'`: the literal is a fallback for a secret. */
+function isSecretFallback(literal: ts.StringLiteralLike): boolean {
+  const parent = literal.parent;
+  return literal.text !== '' && ts.isBinaryExpression(parent) && parent.right === literal &&
+    (parent.operatorToken.kind === ts.SyntaxKind.BarBarToken || parent.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) &&
+    readsSecretEnv(parent.left);
+}
+
+/** `process.env.A_SECRET`, or a `||`/`??` chain of reads that includes one. */
+function readsSecretEnv(expr: ts.Expression): boolean {
+  if (ts.isBinaryExpression(expr) &&
+    (expr.operatorToken.kind === ts.SyntaxKind.BarBarToken || expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)) {
+    return readsSecretEnv(expr.left) || readsSecretEnv(expr.right);
+  }
+  return isSecretEnvRead(expr);
+}
+
+/** The literal is stored (a variable, property or default), not passed to a call. */
+function isStoredValue(literal: ts.Node): boolean {
+  let parent = literal.parent;
+  while (ts.isBinaryExpression(parent) || ts.isParenthesizedExpression(parent) || ts.isTemplateSpan(parent) ||
+    ts.isConditionalExpression(parent) || ts.isAsExpression(parent) || ts.isSatisfiesExpression(parent)) {
+    parent = parent.parent;
+  }
+  return ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent) || ts.isParameter(parent) ||
+    ts.isPropertyDeclaration(parent) || ts.isBindingElement(parent);
+}
 
 const RESTATING_STOPWORDS = new Set([
   'the', 'a', 'an', 'to', 'of', 'and', 'or', 'for', 'with', 'in', 'on', 'from', 'by', 'at', 'as', 'into',
@@ -969,9 +1028,16 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
       !ts.isJsxAttribute(node.parent) &&
       !ts.isImportDeclaration(node.parent) && !ts.isExportDeclaration(node.parent) &&
-      !ts.isLiteralTypeNode(node.parent) &&
-      PLACEHOLDER_VALUE_PATTERNS.some(pattern => pattern.test(node.text.trim()))) {
-      report('placeholder_value', node);
+      !ts.isLiteralTypeNode(node.parent)) {
+      const value = node.text.trim();
+      if (isSecretFallback(node)) {
+        report('placeholder_value', node, {
+          message: 'Secret falls back to a hard-coded value when the environment variable is not set.',
+          fix: 'Fail at startup when the variable is missing instead of using a default.'
+        });
+      } else if (PLACEHOLDER_VALUE_PATTERNS.some(pattern => pattern.test(value)) || (EXAMPLE_URL.test(value) && isStoredValue(node))) {
+        report('placeholder_value', node);
+      }
     }
 
     if (node.kind === ts.SyntaxKind.AnyKeyword && isTypeScript && !isAnyInTypeLevelPattern(node) &&
