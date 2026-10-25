@@ -331,8 +331,8 @@ class ResolutionIndex {
     } catch {
       // Unreadable directory: no import map here.
     }
-    // deno.json, deno.jsonc, and variants passed with --config (deno.react-jsx.json).
-    for (const name of entries.filter(entry => /^deno(\.[\w-]+)?\.jsonc?$/.test(entry))) {
+    // deno.json, deno.jsonc, and variants passed with --config (deno.react-jsx.json, deno.react.precompile.json).
+    for (const name of entries.filter(entry => /^deno(\.[\w-]+)*\.jsonc?$/.test(entry))) {
       const config = readJsoncObject(path.join(dir, name));
       if (config === undefined) continue;
       keys.push(...Object.keys(asObject(config.imports) ?? {}));

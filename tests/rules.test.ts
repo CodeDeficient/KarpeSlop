@@ -675,7 +675,7 @@ test('checkImports: names from a Deno import map are not npm packages', async ()
     'package.json': JSON.stringify({ name: 'repo', private: true }),
     'runtime-tests/deno/deno.jsonc': '{\n  // JSR packages\n  "imports": { "@std/assert": "jsr:@std/assert@^1", "@std/path/": "jsr:/@std/path@^1/" },\n  "importMap": "./map.json"\n}\n',
     'runtime-tests/deno/map.json': JSON.stringify({ imports: { 'oak': 'https://deno.land/x/oak/mod.ts' } }),
-    'runtime-tests/deno-jsx/deno.react-jsx.json': JSON.stringify({ imports: { '@std/expect': 'jsr:@std/expect@^1' } }),
+    'runtime-tests/deno-jsx/deno.react.precompile.json': JSON.stringify({ imports: { '@std/expect': 'jsr:@std/expect@^1' } }),
     'runtime-tests/deno-jsx/b.test.tsx': "import { expect } from '@std/expect';\n",
     'runtime-tests/deno/a.test.ts': "import { assertEquals } from '@std/assert';\nimport { join } from '@std/path/posix';\nimport { Application } from 'oak';\nimport { x } from 'left-padx-utils-ai';\n"
   });
