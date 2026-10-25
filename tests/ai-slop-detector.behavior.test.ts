@@ -826,6 +826,27 @@ test('fresh_package_version skips packages the scanned workspace publishes itsel
   }
 });
 
+test('an example may import a package the repository does not declare; a nonexistent one is still reported', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-examples-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'lib' }));
+    fs.mkdirSync(path.join(dir, 'examples', 'cache'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'examples', 'cache', 'index.js'), "const redis = require('redis');\nconst x = require('left-padx-utils-ai');\n");
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.writeFileSync(path.join(dir, 'src', 'index.js'), "const redis = require('redis');\n");
+    t.mock.method(console, 'log', () => {});
+    const registry = async (name: string) => (name === 'left-padx-utils-ai' ? 'missing' as const : 'exists' as const);
+    const issues = await new AISlopDetector(dir, undefined, registry).detect();
+    const imports = issues.filter(issue => issue.type === 'undeclared_dependency' || issue.type === 'nonexistent_package');
+    assert.deepEqual(imports.map(issue => [issue.type, path.relative(dir, issue.file)]).sort(), [
+      ['nonexistent_package', path.join('examples', 'cache', 'index.js')],
+      ['undeclared_dependency', path.join('src', 'index.js')]
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('finding density counts application code only', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-density-'));
   try {

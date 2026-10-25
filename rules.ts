@@ -225,6 +225,11 @@ export function isNonProductionPath(filePath: string): boolean {
     /(^|\/)test-[^/]*$/.test(normalized);
 }
 
+/** Example code, whose readers install what each example needs (express's `examples/` imports redis). */
+export function isExamplePath(filePath: string): boolean {
+  return /(^|\/)examples?\//.test(filePath.replace(/\\/g, '/'));
+}
+
 /**
  * `__fixtures__` and `__testfixtures__` (the jscodeshift convention) hold
  * sample input such as codemod before/after files, not code that runs. Plain

@@ -18,6 +18,7 @@ import {
   analyzeSource,
   findUnsafeAssertions,
   getRule,
+  isExamplePath,
   isFixturePath,
   isNonProductionPath,
   type Severity,
@@ -706,6 +707,7 @@ class AISlopDetector {
     const files = codeFiles.filter(file => !(quiet && this.isNonProductionFile(file)) && !isFixturePath(path.relative(this.rootDir, file)));
     const findings = await checkImports(files, this.rootDir, this.registryLookup);
     for (const finding of findings) {
+      if (finding.type === 'undeclared_dependency' && isExamplePath(path.relative(this.rootDir, finding.file))) continue;
       const rule = getRule(finding.type);
       this.record({
         type: finding.type,
