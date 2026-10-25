@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- An invalid `.karpesloprc.json` stops the run with exit 1 and says what is wrong. It used to print a warning and scan with defaults, which silently dropped the project's severity overrides and ignore paths (KarpeSlop's own `swallowed_error` rule found this).
 - `hallucinated_import` reports a subpath an installed package does not have (`lodash-es/debounceAsync`): no file or folder by that name and no matching `exports` key, `*` patterns included.
 - `hallucinated_import` checks names re-exported with `export { a, b } from 'mod'`, not only imports.
 - `hallucinated_import` checks default imports. `import dateFns from 'date-fns'` is reported when the module is an ES module with no default export, following the same rule as TypeScript: CommonJS modules (`export =`, or a declaration file not in ES module format) get a synthesized default and are not reported.
