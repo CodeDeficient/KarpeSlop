@@ -38,6 +38,12 @@ test('placeholder: a real body with a TODO is only a TODO', () => {
   assert.deepEqual(typesIn(code), ['todo_comment']);
 });
 
+test('placeholder: comments that merely mention "placeholder" or "stub" are not placeholders', () => {
+  assert.equal(countOf("class I { get placeholder() {\n  // placeholder text for the input\n  return 'Search...';\n} }", 'placeholder_implementation'), 0);
+  assert.equal(countOf('function stub() { /* stub for tests */ }', 'placeholder_implementation'), 0);
+  assert.equal(countOf('function f() {\n  // placeholder implementation\n  return [];\n}', 'placeholder_implementation'), 1);
+});
+
 test('placeholder: empty no-op callbacks are not placeholders', () => {
   assert.equal(countOf('const noop = () => {};\nfunction onIdle() {}\n', 'placeholder_implementation'), 0);
 });
@@ -80,6 +86,10 @@ test('placeholder credentials are reported', () => {
   }
 });
 
+test('ordinary status values are not placeholder values', () => {
+  assert.equal(countOf("const s = 'todo'; if (t.status === 'fixme') {}", 'placeholder_value'), 0);
+});
+
 test('UI copy and JSX placeholders are not placeholder values', () => {
   assert.equal(countOf('const label = "Your API key";', 'placeholder_value'), 0);
   assert.equal(countOf('const x = <input placeholder="your-email" />;', 'placeholder_value', 'x.tsx'), 0);
@@ -112,6 +122,11 @@ test('casts: every cast is reported, `as const` and `as unknown` are not', () =>
   assert.equal(countOf('const a = b as any;', 'any_type_usage'), 0);
 });
 
+test('casts: parenthesized chains count as chained casts, reported once', () => {
+  assert.deepEqual(typesIn('const y = (x as unknown) as Foo;'), ['unsafe_double_type_assertion']);
+  assert.deepEqual(typesIn('const y = x as A as B;'), ['unsafe_double_type_assertion']);
+});
+
 test('non-null assertions are reported', () => {
   assert.equal(countOf('const a = map.get(k)!;', 'non_null_assertion'), 1);
   assert.equal(countOf('if (a !== b) {}', 'non_null_assertion'), 0);
@@ -131,6 +146,7 @@ test('fetch with a status check, a handed-off response, or a local fetch is not 
   assert.equal(countOf('async function f() { const res = await fetch(u); if (!res.ok) throw new Error(); return res.json(); }', 'unchecked_fetch_response'), 0);
   assert.equal(countOf('async function f() { const res = await fetch(u); assertOk(res); return res.json(); }', 'unchecked_fetch_response'), 0);
   assert.equal(countOf('async function f() { const res = await fetch(u); return res; }', 'unchecked_fetch_response'), 0);
+  assert.equal(countOf('async function f() { const res = await fetch(u); const { ok } = res; if (!ok) throw e; return res.json(); }', 'unchecked_fetch_response'), 0);
   assert.equal(countOf('const fetch = makeClient();\nfetch(u).then(r => r.json());', 'unchecked_fetch_response'), 0);
   assert.equal(countOf('class Q { run() { return this.fetch(); } }', 'unchecked_fetch_response'), 0);
 });
@@ -259,6 +275,68 @@ test('checkImports: re-exports from an unresolved module are not treated as miss
   try {
     const findings = await checkImports([path.join(dir, 'src/index.ts'), path.join(dir, 'src/use.ts')], dir, registry);
     assert.deepEqual(findings, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkImports: aliases from a nested tsconfig or a bundler config are not packages', async () => {
+  const lookups: string[] = [];
+  const recording: RegistryLookup = async name => {
+    lookups.push(name);
+    return 'missing';
+  };
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'repo', private: true }),
+    'packages/web/package.json': JSON.stringify({ name: 'web' }),
+    'packages/web/tsconfig.json': JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@lib/*': ['src/lib/*'] } } }),
+    'packages/web/src/a.ts': "import { x } from '@lib/util';\nimport { y } from '@components/Button';\n",
+    'packages/web/vite.config.ts': "export default { resolve: { alias: { '@components': '/src/components' } } };\n"
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'packages/web/src/a.ts')], dir, recording);
+    assert.deepEqual(findings, []);
+    assert.deepEqual(lookups, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkImports: paths from a solution-style tsconfig\'s references are honored', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app' }),
+    'tsconfig.json': JSON.stringify({ files: [], references: [{ path: './tsconfig.app.json' }] }),
+    'tsconfig.app.json': JSON.stringify({ compilerOptions: { composite: true, paths: { '@ui/*': ['./ui/*'] } }, include: ['src'] }),
+    'src/a.ts': "import { Button } from '@ui/button';\n"
+  });
+  try {
+    assert.deepEqual(await checkImports([path.join(dir, 'src/a.ts')], dir, registry), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkImports: module augmentations in the project\'s .d.ts files count as exports', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app', dependencies: { lib: '1.0.0' } }),
+    'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true }, include: ['src'] }),
+    'node_modules/lib/package.json': JSON.stringify({ name: 'lib', version: '1.0.0', types: 'index.d.ts' }),
+    'node_modules/lib/index.d.ts': 'export declare const base: number;\n',
+    'src/types/lib.d.ts': "import 'lib';\ndeclare module 'lib' { export const extra: string; }\n",
+    'src/a.ts': "import { base, extra } from 'lib';\n"
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/a.ts')], dir, registry);
+    assert.deepEqual(findings, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkImports: render from react-dom is not a known mix-up', async () => {
+  const dir = makeProject({ 'a.ts': "import { render } from 'react-dom';\n" });
+  try {
+    assert.deepEqual(await checkImports([path.join(dir, 'a.ts')], dir, registry), []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

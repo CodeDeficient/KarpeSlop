@@ -469,6 +469,27 @@ test('default mode still reports unsafe_type_assertion in non-test files', () =>
   }
 });
 
+test('a parent directory named test does not turn the whole project into test files', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-parent-'));
+  const projectDir = path.join(parent, 'test', 'myapp');
+  fs.mkdirSync(path.join(projectDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, 'src', 'index.ts'), 'export const x = value as any;\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    // Resolve tsx from this repo: the project directory has no node_modules.
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--quiet'],
+    { encoding: 'utf-8', cwd: projectDir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+
+  try {
+    assert.equal(result.status, 1, `stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+    assert.ok(result.stdout.includes('unsafe_type_assertion'));
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});
+
 test('-- separator lets paths starting with - be treated as targets, not flags', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-dash-'));
   const fixtureFile = path.join(tmpDir, '-my-file.ts');

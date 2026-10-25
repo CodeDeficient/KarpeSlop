@@ -216,6 +216,7 @@ class AISlopDetector {
   private reportedFreshPackageKeys = new Set<string>();
   private targetPaths: string[] = [];
   private summary: ScanSummary = { filesScanned: 0, linesScanned: 0 };
+  private lineCounts = new Map<string, number>();
 
   constructor(private rootDir: string, targetPaths?: string[], private registryLookup: RegistryLookup = npmRegistryLookup) {
     this.loadConfig();
@@ -367,6 +368,10 @@ class AISlopDetector {
    */
   async detect(quiet: boolean = false) {
     console.log('Scanning for AI slop patterns...\n');
+    // A detector can be reused; each scan starts from a clean slate.
+    this.issues = [];
+    this.lineCounts.clear();
+    this.reportedFreshPackageKeys.clear();
 
     let filesToAnalyze: string[];
 
@@ -393,7 +398,7 @@ class AISlopDetector {
 
     this.summary = {
       filesScanned: codeFiles.length,
-      linesScanned: codeFiles.reduce((sum, file) => sum + fs.readFileSync(file, 'utf-8').split('\n').length, 0)
+      linesScanned: codeFiles.reduce((sum, file) => sum + (this.lineCounts.get(file) ?? 0), 0)
     };
     this.issues.sort((a, b) =>
       SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
@@ -426,7 +431,17 @@ class AISlopDetector {
   }
 
   private shouldAnalyzeInQuietMode(filePath: string): boolean {
-    return shouldAnalyzePathInQuietMode(filePath, this.rootDir, this.coreAppDirs) && !isTestPath(filePath);
+    return shouldAnalyzePathInQuietMode(filePath, this.rootDir, this.coreAppDirs) && !this.isTestFile(filePath);
+  }
+
+  /**
+   * Test-file check on the path relative to the scan root, so a parent
+   * directory of the checkout (e.g. ~/test/myapp) never matters. Targets
+   * outside the root are judged by file name only.
+   */
+  private isTestFile(filePath: string): boolean {
+    const relativePath = path.relative(this.rootDir, filePath);
+    return relativePath.startsWith('..') ? isTestPath(path.basename(filePath)) : isTestPath(relativePath);
   }
 
   private isIgnoredByConfig(filePath: string): boolean {
@@ -518,19 +533,13 @@ class AISlopDetector {
     }
 
     const content = fs.readFileSync(filePath, 'utf-8');
-    const isTestFile = isTestPath(path.relative(this.rootDir, filePath)) || isTestPath(path.basename(filePath));
+    const isTestFile = this.isTestFile(filePath);
     if (quiet && isTestFile) return;
     const isCliFile = isCliPath(path.relative(this.rootDir, filePath), content);
 
-    const findings = analyzeSource(content, filePath);
-    const unsafeCasts: UnsafeAssertionFinding[] = /\.[cm]?tsx?$/.test(filePath) ? findUnsafeAssertions(content, filePath) : [];
+    this.lineCounts.set(filePath, content.split('\n').length);
 
-    const all = [
-      ...findings,
-      ...unsafeCasts.map(({ type, line, column, code }) => ({ type, line, column, code, message: undefined, fix: undefined }))
-    ];
-
-    for (const finding of all) {
+    for (const finding of analyzeSource(content, filePath)) {
       const rule = getRule(finding.type);
       if (rule === undefined) continue;
       if (rule.skipTests && isTestFile) continue;
@@ -571,7 +580,7 @@ class AISlopDetector {
   }
 
   private async analyzeImports(codeFiles: string[], quiet: boolean): Promise<void> {
-    const files = quiet ? codeFiles.filter(file => !isTestPath(file)) : codeFiles;
+    const files = quiet ? codeFiles.filter(file => !this.isTestFile(file)) : codeFiles;
     const findings = await checkImports(files, this.rootDir, this.registryLookup);
     for (const finding of findings) {
       const rule = getRule(finding.type);
@@ -742,16 +751,16 @@ class AISlopDetector {
       const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName)}`;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
-      let response: Response;
+      // The timeout covers the body as well as the headers.
       try {
-        response = await fetch(url, { signal: controller.signal });
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) return null;
+        const body: unknown = await response.json();
+        for (const [key, value] of Object.entries(asRecord(asRecord(body)?.time) ?? {})) {
+          if (typeof value === 'string') times[key] = value;
+        }
       } finally {
         clearTimeout(timer);
-      }
-      if (!response.ok) return null;
-      const body: unknown = await response.json();
-      for (const [key, value] of Object.entries(asRecord(asRecord(body)?.time) ?? {})) {
-        if (typeof value === 'string') times[key] = value;
       }
     } catch {
       if (!this.registryWarningLogged) {

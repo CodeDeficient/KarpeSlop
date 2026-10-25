@@ -268,9 +268,9 @@ export function collectComments(sourceFile: ts.SourceFile): CommentInfo[] {
   };
   visit(sourceFile);
 
-  for (const [pos, end] of jsxTextRanges) {
+  if (jsxTextRanges.length > 0) {
     for (const commentPos of [...byPos.keys()]) {
-      if (commentPos >= pos && commentPos < end) byPos.delete(commentPos);
+      if (jsxTextRanges.some(([pos, end]) => commentPos >= pos && commentPos < end)) byPos.delete(commentPos);
     }
   }
 
@@ -358,9 +358,28 @@ interface CastReport {
 }
 
 /** Classify one cast. Chained casts report the chain, plus `as any` when it ends in any. */
+function skipParentheses(expr: ts.Expression): ts.Expression {
+  let current = expr;
+  while (ts.isParenthesizedExpression(current)) current = current.expression;
+  return current;
+}
+
+/** The cast directly inside this one, looking through parentheses: `(x as A) as B`. */
+function innerCast(node: AssertionNode): AssertionNode | undefined {
+  const inner = skipParentheses(node.expression);
+  return isAssertion(inner) && !isConstAssertion(inner.type) ? inner : undefined;
+}
+
+/** True for the inner half of a chained cast, which is reported as part of the chain. */
+function isInnerOfChain(node: AssertionNode): boolean {
+  let parent = node.parent;
+  while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
+  return isAssertion(parent) && !isConstAssertion(parent.type);
+}
+
 function classifyCast(node: AssertionNode): CastReport[] {
   const isAny = node.type.kind === ts.SyntaxKind.AnyKeyword;
-  if (isAssertion(node.expression) && !isConstAssertion(node.expression.type)) {
+  if (innerCast(node) !== undefined) {
     const reports: CastReport[] = [{ type: 'unsafe_double_type_assertion', form: 'chained_as', anchor: node }];
     // Report the trailing `as any` as well, so turning off the chained-cast
     // rule does not hide it.
@@ -380,8 +399,12 @@ function classifyCast(node: AssertionNode): CastReport[] {
  */
 export function findUnsafeAssertions(sourceText: string, fileName: string): UnsafeAssertionFinding[] {
   if (fileName.endsWith('.d.ts')) return [];
-
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
+  return unsafeAssertionsIn(sourceFile, fileName);
+}
+
+function unsafeAssertionsIn(sourceFile: ts.SourceFile, fileName: string): UnsafeAssertionFinding[] {
+  const sourceText = sourceFile.text;
   const findings: UnsafeAssertionFinding[] = [];
 
   const visit = (node: ts.Node) => {
@@ -420,8 +443,8 @@ const PLACEHOLDER_COMMENT = new RegExp([
   String.raw`\bnot\s+(yet\s+)?implemented\b`,
   String.raw`\bimplement\s+(this|me|later|properly)\b`,
   String.raw`^(TODO|FIXME)\b.*\bimplement`,
-  String.raw`\bplaceholder\b`,
-  String.raw`\bstub(bed)?\b`
+  String.raw`\b(placeholder|stub)\s+(implementation|logic|code|body|function|method|for\s+now)\b`,
+  String.raw`\bstubbed(\s+out)?\b`
 ].join('|'), 'i');
 
 const NOT_IMPLEMENTED_MESSAGE = /not\s+(yet\s+)?implemented|implement\s+me|^todo\b/i;
@@ -452,7 +475,7 @@ const PLACEHOLDER_VALUE_PATTERNS: readonly RegExp[] = [
   /^your[_-](\w+[_-])*(api[_-]?key|key|token|secret|password|passwd|url|uri|endpoint|id|domain|project|bucket|account|client|dsn|webhook)([_-]here)?$/i,
   /^(insert|replace|put|enter|paste)[_-](with[_-])?(your|the)[_-][\w-]+$/i,
   /^(sk|pk|rk|ghp|xox[abp])[-_]?(x{6,}|\.{3,}|\*{6,})/i,
-  /^(xxx+|changeme|change[_-]me|replace[_-]?me|fixme|todo)$/i
+  /^(xxx{2,}|changeme|change[_-]me|replace[_-]?me)$/i
 ];
 
 const RESTATING_STOPWORDS = new Set([
@@ -629,7 +652,16 @@ function responseUsage(scope: ts.Node, name: string): { readsBody: ts.Node | und
     if (ts.isCallExpression(node) && node.arguments.some(arg => ts.isIdentifier(arg) && arg.text === name)) {
       checked = true;
     }
-    if ((ts.isReturnStatement(node) && node.expression !== undefined && ts.isIdentifier(node.expression) && node.expression.text === name)) {
+    if (ts.isReturnStatement(node) && node.expression !== undefined && ts.isIdentifier(node.expression) && node.expression.text === name) {
+      checked = true;
+    }
+    // const { ok, status } = res
+    if (ts.isVariableDeclaration(node) && node.initializer !== undefined && ts.isIdentifier(node.initializer) &&
+      node.initializer.text === name && ts.isObjectBindingPattern(node.name) &&
+      node.name.elements.some(element => {
+        const key = element.propertyName ?? element.name;
+        return ts.isIdentifier(key) && (key.text === 'ok' || key.text === 'status');
+      })) {
       checked = true;
     }
     ts.forEachChild(node, visit);
@@ -670,7 +702,8 @@ export interface AnalyzeOptions {
 }
 
 /**
- * Run every syntax-level rule on one file. Test-file skips and severity
+ * Run every syntax-level rule on one file, including the unsafe-cast rules
+ * from findUnsafeAssertions (TypeScript files only). Test-file skips and severity
  * overrides are applied by the caller. There is deliberately no inline
  * suppression comment: the only way to silence a rule is a reviewed
  * severityOverrides entry in .karpesloprc.json.
@@ -696,6 +729,22 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     findings.push({ type, line: comment.line, column: comment.column, code: comment.raw.split('\n')[0].trim() });
   };
 
+  // Comments are sorted by position, so the ones inside a node are a contiguous slice.
+  const commentsWithin = (node: ts.Node): CommentInfo[] => {
+    let low = 0;
+    let high = comments.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (comments[mid].pos <= node.pos) low = mid + 1;
+      else high = mid;
+    }
+    const inside: CommentInfo[] = [];
+    for (let index = low; index < comments.length && comments[index].end < node.end; index++) {
+      inside.push(comments[index]);
+    }
+    return inside;
+  };
+
   // Comments that sit inside a placeholder body are reported once, as the placeholder.
   const placeholderBodies: ts.Block[] = [];
   const anyLines = new Set<number>();
@@ -704,7 +753,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
   const visit = (node: ts.Node) => {
     if (isFunctionWithBody(node)) {
       const body = node.body;
-      const inner = comments.filter(c => c.pos > body.pos && c.end < body.end);
+      const inner = commentsWithin(body);
       const statements = body.statements;
       const allTrivial = statements.length <= 2 && statements.every(isTrivialStatement);
       const commentSaysPlaceholder = inner.some(c => PLACEHOLDER_COMMENT.test(c.body));
@@ -721,7 +770,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
 
     if (ts.isCatchClause(node) && node.block.statements.length === 0 &&
-      !comments.some(c => c.pos > node.block.pos && c.end < node.block.end)) {
+      commentsWithin(node.block).length === 0) {
       report('empty_catch', node);
     }
 
@@ -731,7 +780,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       const handler = node.arguments[0];
       if ((ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) && ts.isBlock(handler.body) &&
         handler.body.statements.length === 0 &&
-        !comments.some(c => c.pos > handler.body.pos && c.end < handler.body.end)) {
+        commentsWithin(handler.body).length === 0) {
         report('empty_catch', node.expression.name);
       }
     }
@@ -755,7 +804,8 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
 
     // Unsafe casts come from findUnsafeAssertions; every other cast is reported here.
-    if (isCast(node) && isTypeScript && classifyCast(node).every(cast => cast.type === 'type_assertion')) {
+    if (isCast(node) && isTypeScript && !isInnerOfChain(node) &&
+      classifyCast(node).every(cast => cast.type === 'type_assertion')) {
       report('type_assertion', node);
     }
 
@@ -850,6 +900,12 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     if (comment.isLineComment && comment.ownLine && !nextIsComment && !previousIsComment &&
       !EXPLAINING_WORDS.test(body) && isRestatingComment(sourceFile, comment)) {
       reportComment('restating_comment', comment);
+    }
+  }
+
+  if (isTypeScript && !fileName.endsWith('.d.ts')) {
+    for (const cast of unsafeAssertionsIn(sourceFile, fileName)) {
+      findings.push({ type: cast.type, line: cast.line, column: cast.column, code: cast.code });
     }
   }
 

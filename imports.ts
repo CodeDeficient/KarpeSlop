@@ -54,8 +54,7 @@ const KNOWN_WRONG_IMPORTS: ReadonlyMap<string, ReadonlyMap<string, readonly stri
   ])],
   ['react-dom', new Map([
     ['useState', ['react']],
-    ['useEffect', ['react']],
-    ['render', ['react-dom/client (createRoot)']]
+    ['useEffect', ['react']]
   ])],
   ['next/router', new Map([
     ['usePathname', ['next/navigation']],
@@ -165,27 +164,116 @@ function typesPackageFor(packageName: string): string {
     : `@types/${packageName}`;
 }
 
-/** Load compiler options from the project's tsconfig/jsconfig, if any. */
-function loadCompilerOptions(rootDir: string): ts.CompilerOptions {
-  const configPath = ts.findConfigFile(rootDir, ts.sys.fileExists, 'tsconfig.json') ??
-    ts.findConfigFile(rootDir, ts.sys.fileExists, 'jsconfig.json');
-  let options: ts.CompilerOptions = {
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    jsx: ts.JsxEmit.Preserve,
-    esModuleInterop: true,
-    allowSyntheticDefaultImports: true,
-    resolveJsonModule: true
-  };
-  if (configPath !== undefined) {
-    const read = ts.readConfigFile(configPath, ts.sys.readFile);
-    if (read.error === undefined) {
-      const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, path.dirname(configPath));
-      options = { ...options, ...parsed.options };
+const DEFAULT_OPTIONS: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  jsx: ts.JsxEmit.Preserve,
+  esModuleInterop: true,
+  allowSyntheticDefaultImports: true,
+  resolveJsonModule: true
+};
+
+interface ProjectConfig {
+  options: ts.CompilerOptions;
+  /** Declaration files the tsconfig includes (ambient modules, augmentations). */
+  declarationFiles: string[];
+}
+
+function parseConfigFile(configPath: string): ts.ParsedCommandLine | undefined {
+  const read = ts.readConfigFile(configPath, ts.sys.readFile);
+  return read.error === undefined
+    ? ts.parseJsonConfigFileContent(read.config, ts.sys, path.dirname(configPath))
+    : undefined;
+}
+
+function readProjectConfig(configPath: string | undefined): ProjectConfig {
+  let options = DEFAULT_OPTIONS;
+  let declarationFiles: string[] = [];
+  const parsed = configPath === undefined ? undefined : parseConfigFile(configPath);
+  if (parsed !== undefined) {
+    options = { ...options, ...parsed.options };
+    declarationFiles = parsed.fileNames.filter(name => /\.d\.[cm]?ts$/.test(name));
+    // Solution-style configs (`"files": []` plus `references`, as in the Vite
+    // template) keep paths and baseUrl in the referenced configs.
+    for (const reference of parsed.projectReferences ?? []) {
+      const referencePath = ts.resolveProjectReferencePath(reference);
+      const referenced = fs.existsSync(referencePath) ? parseConfigFile(referencePath) : undefined;
+      if (referenced === undefined) continue;
+      if (options.paths === undefined && referenced.options.paths !== undefined) {
+        options = { ...options, paths: referenced.options.paths, pathsBasePath: referenced.options.pathsBasePath };
+      }
+      if (options.baseUrl === undefined && referenced.options.baseUrl !== undefined) {
+        options = { ...options, baseUrl: referenced.options.baseUrl };
+      }
+      declarationFiles.push(...referenced.fileNames.filter(name => /\.d\.[cm]?ts$/.test(name)));
     }
   }
-  return { ...options, allowJs: true, checkJs: false, noEmit: true, skipLibCheck: true };
+  return {
+    options: { ...options, allowJs: true, checkJs: false, noEmit: true, skipLibCheck: true },
+    declarationFiles
+  };
+}
+
+function findProjectConfig(dir: string): string | undefined {
+  return ts.findConfigFile(dir, ts.sys.fileExists, 'tsconfig.json') ??
+    ts.findConfigFile(dir, ts.sys.fileExists, 'jsconfig.json');
+}
+
+const BUNDLER_CONFIG = /^((vite|vitest|webpack|next|nuxt|astro|svelte|rollup|rspack|rsbuild|babel|jest|metro|craco|quasar|remix)\.config\.[cm]?[jt]s|\.babelrc(\.json)?|babel\.config\.json)$/;
+
+/**
+ * Resolves a file's imports with the tsconfig/jsconfig nearest to it (so
+ * per-package `paths` in a monorepo apply), and recognizes import aliases
+ * that only a bundler knows about.
+ */
+class ResolutionIndex {
+  private configs = new Map<string, ProjectConfig>();
+  private bundlerText = new Map<string, string>();
+
+  configFor(fileDir: string): ProjectConfig {
+    const configPath = findProjectConfig(fileDir) ?? '';
+    let config = this.configs.get(configPath);
+    if (config === undefined) {
+      config = readProjectConfig(configPath === '' ? undefined : configPath);
+      this.configs.set(configPath, config);
+    }
+    return config;
+  }
+
+  /** Concatenated text of bundler/test-runner configs from `dir` up to the filesystem root. */
+  private bundlerConfigText(dir: string): string {
+    const cached = this.bundlerText.get(dir);
+    if (cached !== undefined) return cached;
+    const parent = path.dirname(dir);
+    let text = parent === dir ? '' : this.bundlerConfigText(parent);
+    try {
+      for (const entry of fs.readdirSync(dir)) {
+        if (BUNDLER_CONFIG.test(entry)) text += `\n${fs.readFileSync(path.join(dir, entry), 'utf-8')}`;
+      }
+    } catch {
+      // Unreadable directory: nothing to add.
+    }
+    this.bundlerText.set(dir, text);
+    return text;
+  }
+
+  /**
+   * True when the specifier's first segment is an alias rather than a package:
+   * a tsconfig `paths` key, a folder under `baseUrl` (or `src/`), or a name a
+   * bundler config mentions.
+   */
+  isAlias(specifier: string, fileDir: string, options: ts.CompilerOptions): boolean {
+    const first = specifier.split('/')[0];
+    const pathKeys = Object.keys(options.paths ?? {});
+    if (pathKeys.some(key => key.split('/')[0].replace(/\*$/, '') === first)) return true;
+    const baseDirs = [options.baseUrl, options.pathsBasePath, path.join(path.dirname(findProjectConfig(fileDir) ?? fileDir), 'src')];
+    for (const base of baseDirs) {
+      if (typeof base === 'string' && fs.existsSync(path.join(base, first))) return true;
+    }
+    const text = this.bundlerConfigText(fileDir);
+    return text.includes(`'${first}`) || text.includes(`"${first}`) || text.includes(`\`${first}`);
+  }
 }
 
 interface ImportSite {
@@ -222,8 +310,12 @@ export async function checkImports(
 ): Promise<ImportFinding[]> {
   if (files.length === 0) return [];
 
-  const options = loadCompilerOptions(rootDir);
-  const program = ts.createProgram({ rootNames: [...files], options });
+  const resolution = new ResolutionIndex();
+  const rootConfig = resolution.configFor(rootDir);
+  const options = rootConfig.options;
+  // Include the project's own declaration files so ambient modules and
+  // module augmentations count as exports.
+  const program = ts.createProgram({ rootNames: [...new Set([...files, ...rootConfig.declarationFiles])], options });
   const checker = program.getTypeChecker();
   const packages = new PackageIndex();
   const findings: ImportFinding[] = [];
@@ -234,14 +326,16 @@ export async function checkImports(
     if (sourceFile === undefined || sourceFile.isDeclarationFile) continue;
     const fileDir = path.dirname(file);
     const scope = packages.scopeFor(fileDir);
+    const fileOptions = resolution.configFor(fileDir).options;
 
     for (const site of collectImportSites(sourceFile)) {
       const specifier = site.specifier.text;
       const position = sourceFile.getLineAndCharacterOfPosition(site.specifier.getStart(sourceFile));
       const where = { file, line: position.line + 1, column: position.character + 1 };
-      const resolved = ts.resolveModuleName(specifier, file, options, ts.sys).resolvedModule;
+      const resolved = ts.resolveModuleName(specifier, file, fileOptions, ts.sys).resolvedModule;
 
-      if (resolved === undefined && isBarePackageSpecifier(specifier) && scope.hasManifest) {
+      if (resolved === undefined && isBarePackageSpecifier(specifier) && scope.hasManifest &&
+        !resolution.isAlias(specifier, fileDir, fileOptions)) {
         const packageName = packageNameOf(specifier);
         const declared = scope.declared.has(packageName) || scope.declared.has(typesPackageFor(packageName));
         if (!declared && !packages.isInstalled(fileDir, packageName)) {
@@ -287,12 +381,13 @@ export async function checkImports(
     }
   }
 
-  // Only undeclared, uninstalled names are looked up, so this stays small.
-  const statuses = new Map<string, Promise<RegistryStatus>>();
+  // Only undeclared, uninstalled, non-alias names are looked up, so this stays
+  // small. Lookups run in parallel.
+  const names = [...new Set(pendingRegistry.map(entry => entry.packageName))];
+  const results = await Promise.all(names.map(name => registryLookup(name)));
+  const statuses = new Map(names.map((name, index) => [name, results[index]]));
   for (const { finding, packageName } of pendingRegistry) {
-    if (!statuses.has(packageName)) statuses.set(packageName, registryLookup(packageName));
-    const status = await statuses.get(packageName);
-    if (status === 'missing') {
+    if (statuses.get(packageName) === 'missing') {
       finding.type = 'nonexistent_package';
       finding.message = `'${packageName}' does not exist on the npm registry.`;
     }
