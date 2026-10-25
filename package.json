@@ -1,6 +1,6 @@
 {
   "name": "karpeslop",
-  "version": "1.0.30",
+  "version": "2.0.0",
   "description": "Finds the mistakes that slip into unreviewed AI-assisted TypeScript and JavaScript: imports and packages that do not exist, placeholder code, swallowed errors, unchecked fetch responses, any and type casts.",
   "type": "module",
   "packageManager": "npm@10.9.7",
