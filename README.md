@@ -28,7 +28,7 @@ npx karpeslop@latest
 | `placeholder_implementation` | high | A body that is only a placeholder comment plus a dummy return, or `throw new Error("Not implemented")` |
 | `elided_code_comment` | high | `// ... rest of the code`, `// ...existing code...` and similar |
 | `placeholder_value` | high | `"YOUR_API_KEY"`, `"<your-token>"`, `"sk-xxxxxx"` and similar |
-| `empty_catch` | high | `catch {}` or `.catch(() => {})` with no comment explaining why |
+| `empty_catch` | high | `catch {}` or `.catch(() => {})` with no comment explaining why. Not reported when the `try` returns and code after it is the fallback (`try { return parse(x) } catch {}` then a default) |
 | `unsafe_type_assertion` | high | `as any` |
 | `unsafe_double_type_assertion` | high | `as unknown as T` and other chained casts |
 | `unsafe_object_assertion` / `unsafe_array_assertion` | high | Casts to `Record<...>`, `{ ... }`, `T[]` |
