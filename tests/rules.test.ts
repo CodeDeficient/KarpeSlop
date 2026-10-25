@@ -383,6 +383,13 @@ test('hedging is narrow: "should work" yes, "probably" and "just" no', () => {
   assert.equal(countOf('// this should work now\nexport {};', 'hedging_comment'), 1);
   assert.equal(countOf('// probably cached already, so skip\nexport {};', 'hedging_comment'), 0);
   assert.equal(countOf('// This just creates a retryer\nexport {};', 'hedging_comment'), 0);
+  for (const comment of ['// This should handle most edge cases', '// This might not work if the server is down', '// seems to work locally']) {
+    assert.equal(countOf(`${comment}\nexport {};`, 'hedging_comment'), 1, comment);
+  }
+  assert.equal(countOf('// The parser should handle CRLF line endings\nexport {};', 'hedging_comment'), 0);
+  assert.equal(countOf('// The parser should handle all CRLF line endings\nexport {};', 'hedging_comment'), 0);
+  assert.equal(countOf('// hopefully UTF-8 decoding works here\nexport {};', 'hedging_comment'), 1);
+  assert.equal(countOf('// NOTE: Solid renders twice for some reason without this; see solidjs/solid#1234\nexport {};', 'hedging_comment'), 0);
 });
 
 test('restating comment: repeats the next line', () => {
