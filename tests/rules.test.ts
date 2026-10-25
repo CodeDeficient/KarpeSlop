@@ -208,6 +208,8 @@ test('placeholder values in more forms are reported', () => {
   }
   assert.equal(countOf("const API_BASE = 'https://api.example.com/v1';", 'placeholder_value'), 1);
   assert.equal(countOf("export const cfg = { baseUrl: 'https://example.org' };", 'placeholder_value'), 1);
+  assert.equal(countOf("const API = dev ? 'http://localhost:3000' : 'https://api.example.com';", 'placeholder_value'), 1);
+  assert.equal(countOf("const API = 'https://api.example.com' as const;", 'placeholder_value'), 1);
 });
 
 test('a hard-coded fallback for a secret environment variable is reported', () => {
@@ -217,6 +219,8 @@ test('a hard-coded fallback for a secret environment variable is reported', () =
   assert.equal(countOf("const port = process.env.PORT || '3000';", 'placeholder_value'), 0);
   assert.equal(countOf("const k = process.env.CACHE_KEY || 'v1';", 'placeholder_value'), 0);
   assert.equal(countOf("const s = process.env.JWT_SECRET || process.env.OLD_SECRET || 'secret';", 'placeholder_value'), 1);
+  const [finding] = analyzeSource("const s = process.env.JWT_SECRET || 'changeme';", 'sample.ts').filter(f => f.type === 'placeholder_value');
+  assert.match(finding.message ?? '', /environment variable/);
 });
 
 test('example domains passed to a call and usage text are not placeholder values', () => {

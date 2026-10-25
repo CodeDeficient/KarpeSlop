@@ -587,7 +587,10 @@ function readsSecretEnv(expr: ts.Expression): boolean {
 /** The literal is stored (a variable, property or default), not passed to a call. */
 function isStoredValue(literal: ts.Node): boolean {
   let parent = literal.parent;
-  while (ts.isBinaryExpression(parent) || ts.isParenthesizedExpression(parent) || ts.isTemplateSpan(parent)) parent = parent.parent;
+  while (ts.isBinaryExpression(parent) || ts.isParenthesizedExpression(parent) || ts.isTemplateSpan(parent) ||
+    ts.isConditionalExpression(parent) || ts.isAsExpression(parent) || ts.isSatisfiesExpression(parent)) {
+    parent = parent.parent;
+  }
   return ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent) || ts.isParameter(parent) ||
     ts.isPropertyDeclaration(parent) || ts.isBindingElement(parent);
 }
@@ -1027,13 +1030,13 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       !ts.isImportDeclaration(node.parent) && !ts.isExportDeclaration(node.parent) &&
       !ts.isLiteralTypeNode(node.parent)) {
       const value = node.text.trim();
-      if (PLACEHOLDER_VALUE_PATTERNS.some(pattern => pattern.test(value)) || (EXAMPLE_URL.test(value) && isStoredValue(node))) {
-        report('placeholder_value', node);
-      } else if (isSecretFallback(node)) {
+      if (isSecretFallback(node)) {
         report('placeholder_value', node, {
           message: 'Secret falls back to a hard-coded value when the environment variable is not set.',
           fix: 'Fail at startup when the variable is missing instead of using a default.'
         });
+      } else if (PLACEHOLDER_VALUE_PATTERNS.some(pattern => pattern.test(value)) || (EXAMPLE_URL.test(value) && isStoredValue(node))) {
+        report('placeholder_value', node);
       }
     }
 
