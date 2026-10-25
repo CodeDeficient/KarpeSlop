@@ -177,6 +177,12 @@ test('empty catch that falls through to a fallback is not reported', () => {
   assert.equal(countOf('function f(k: string, x: string) {\n  switch (k) {\n    case "json":\n      try { return JSON.parse(x); } catch {}\n      return null;\n  }\n}', 'empty_catch'), 0);
 });
 
+test('empty catch with an underscore binding is deliberate', () => {
+  assert.equal(countOf('try { a(); } catch (_) {}', 'empty_catch'), 0);
+  assert.equal(countOf('try { a(); } catch (_err: any) {}', 'empty_catch'), 0);
+  assert.equal(countOf('try { a(); } catch (err) {}', 'empty_catch'), 1);
+});
+
 test('empty catch after a try with a fast-path return falls through to the slow path', () => {
   assert.equal(countOf('function f(x: S) {\n  try {\n    const r = x.run();\n    if (!(r instanceof Promise)) return r;\n  } catch {}\n  return slow(x);\n}', 'empty_catch'), 0);
   assert.equal(countOf('function f() {\n  try { items.forEach(() => { return 1; }); } catch {}\n  return 2;\n}', 'empty_catch'), 1);

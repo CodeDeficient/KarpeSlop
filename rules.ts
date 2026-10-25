@@ -916,6 +916,12 @@ function declaresName(sourceFile: ts.SourceFile, name: string): boolean {
   return found;
 }
 
+/** `catch (_)` or `catch (_error)`: the underscore is the usual way to say "unused on purpose". */
+function isIgnoredBinding(clause: ts.CatchClause): boolean {
+  const name = clause.variableDeclaration?.name;
+  return name !== undefined && ts.isIdentifier(name) && name.text.startsWith('_');
+}
+
 /** A `return` in this block or its nested blocks, not in a nested function. */
 function containsReturn(block: ts.Block): boolean {
   let found = false;
@@ -1038,7 +1044,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
 
     if (ts.isCatchClause(node) && node.block.statements.length === 0 &&
-      commentsWithin(node.block).length === 0 && !isFallbackCatch(node)) {
+      commentsWithin(node.block).length === 0 && !isFallbackCatch(node) && !isIgnoredBinding(node)) {
       report('empty_catch', node);
     }
 
