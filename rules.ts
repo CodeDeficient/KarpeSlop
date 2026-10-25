@@ -860,6 +860,36 @@ function isErasedGenericArgument(node: ts.Node): boolean {
   return args.length >= 2 && args.every(arg => arg.kind === ts.SyntaxKind.AnyKeyword);
 }
 
+/**
+ * `(...args: any[]) => any`: the type of "any function". `unknown[]` cannot
+ * replace it, because parameters are contravariant and `(x: string) => void`
+ * is not assignable to `(...args: unknown[]) => unknown`. Covers the rest
+ * parameter and a bare `any` return type of a function type whose rest
+ * parameter is `any`, including the call signature `{ (...args: any[]): any }`.
+ */
+function isAnyFunctionType(node: ts.Node): boolean {
+  let child: ts.Node = node;
+  let current: ts.Node | undefined = node.parent;
+  while (current !== undefined && ts.isTypeNode(current) && !isFunctionSignature(current)) {
+    child = current;
+    current = current.parent;
+  }
+  if (current !== undefined && ts.isParameter(current) && current.dotDotDotToken !== undefined && current.type === child) {
+    child = current;
+    current = current.parent;
+  }
+  if (current === undefined || !isFunctionSignature(current)) return false;
+  const rest = current.parameters.at(-1);
+  const restIsAny = rest !== undefined && rest.dotDotDotToken !== undefined && rest.type !== undefined &&
+    (rest.type.kind === ts.SyntaxKind.AnyKeyword ||
+      (ts.isArrayTypeNode(rest.type) && rest.type.elementType.kind === ts.SyntaxKind.AnyKeyword));
+  return restIsAny && (child === rest || current.type === node);
+}
+
+function isFunctionSignature(node: ts.Node): node is ts.FunctionOrConstructorTypeNode | ts.CallSignatureDeclaration | ts.ConstructSignatureDeclaration {
+  return ts.isFunctionOrConstructorTypeNode(node) || ts.isCallSignatureDeclaration(node) || ts.isConstructSignatureDeclaration(node);
+}
+
 /** True when the `any` keyword sits in a generic constraint/default or a conditional type's `extends` clause. */
 function isAnyInTypeLevelPattern(node: ts.Node): boolean {
   let child: ts.Node = node;
@@ -1238,7 +1268,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
 
     if (node.kind === ts.SyntaxKind.AnyKeyword && isTypeScript && !isAnyInTypeLevelPattern(node) &&
-      !isAssertion(node.parent) && !isErasedGenericArgument(node)) {
+      !isAssertion(node.parent) && !isErasedGenericArgument(node) && !isAnyFunctionType(node)) {
       // One finding per line: `(data: any) => any` is one decision, not two.
       const { line } = positionOf(node.getStart(sourceFile));
       if (!anyLines.has(line)) {

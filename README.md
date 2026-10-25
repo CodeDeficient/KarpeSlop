@@ -34,7 +34,7 @@ npx karpeslop@latest
 | `unsafe_double_type_assertion` | high | `as unknown as T` and other chained casts |
 | `unsafe_object_assertion` / `unsafe_array_assertion` | high | Casts to `Record<...>`, `{ ... }`, `T[]` |
 | `type_assertion` | medium | Any other cast (`as T`, `<T>x`). `as const` and `as unknown` are not casts |
-| `any_type_usage` | medium | Declared `any`, once per line. Not reported in generic constraints, conditional `extends`, or fully erased generics like `Query<any, any, any>` |
+| `any_type_usage` | medium | Declared `any`, once per line. Not reported in generic constraints, conditional `extends`, fully erased generics like `Query<any, any, any>`, or the "any function" type `(...args: any[]) => any`, which `unknown` cannot express |
 | `ts_suppression` | medium | `@ts-ignore`, `@ts-nocheck` |
 | `blanket_eslint_disable` | medium | `eslint-disable` without a rule name |
 | `unchecked_fetch_response` | medium | `res.json()` with no `res.ok`/`res.status` check (`fetch` only rejects on network errors) |

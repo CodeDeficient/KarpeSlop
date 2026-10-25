@@ -359,6 +359,14 @@ test('any: generic constraints, conditional extends and fully erased generics ar
   assert.equal(countOf('type R<T> = T extends Promise<any> ? 1 : 0;', 'any_type_usage'), 0);
   assert.equal(countOf('const observers: Array<Observer<any, any, any>> = [];', 'any_type_usage'), 0);
   assert.equal(countOf('const p: Promise<any> = load();', 'any_type_usage'), 1);
+  assert.equal(countOf('type AnyFn = (...args: any[]) => any;', 'any_type_usage'), 0);
+  assert.equal(countOf('interface AnyFn {\n  (...args: any[]): any;\n  new (...args: any[]): any;\n}', 'any_type_usage'), 0);
+  assert.equal(countOf('type AnyCtor = new (...args: any) => object;', 'any_type_usage'), 0);
+  assert.equal(countOf('type Fns =\n  | ((...args: any[]) => any)\n  | (new (...args: any[]) => any);', 'any_type_usage'), 0);
+  assert.equal(countOf('type H = (req: Request, ...rest: any[]) => Response;', 'any_type_usage'), 0);
+  assert.equal(countOf('const run = (...args: any[]) => args.length;', 'any_type_usage'), 1);
+  assert.equal(countOf('type F = (...args: any[]) =>\n  Promise<any>;', 'any_type_usage'), 1);
+  assert.equal(countOf('type F = (x: any, ...rest: unknown[]) => void;', 'any_type_usage'), 1);
 });
 
 test('casts: every cast is reported, `as const` and `as unknown` are not', () => {
