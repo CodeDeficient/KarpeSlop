@@ -126,16 +126,19 @@ test('casts: cast-like text in strings and comments is not code', () => {
   assert.deepEqual(typesIn('const s = "x as any"; // v as any'), []);
 });
 
-test('casts: parenthesized chains count as chained casts, reported once', () => {
+test('casts: a parenthesized two-cast chain is one chained-cast finding', () => {
   assert.deepEqual(typesIn('const y = (x as unknown) as Foo;'), ['unsafe_double_type_assertion']);
   assert.deepEqual(typesIn('const y = x as A as B;'), ['unsafe_double_type_assertion']);
 });
 
-test('casts: parenthesized chains ending in any, nested chains, and plain parentheses', () => {
+test('casts: each link of a longer chain is reported; any is reported too; plain parentheses are not a chain', () => {
   assert.deepEqual(typesIn('const y = (x as unknown) as any;'), ['unsafe_double_type_assertion', 'unsafe_type_assertion']);
   assert.deepEqual(typesIn('const y = ((x as A) as B) as C;'), ['unsafe_double_type_assertion', 'unsafe_double_type_assertion']);
   assert.deepEqual(typesIn('const y = (x as A) as B as C;'), ['unsafe_double_type_assertion', 'unsafe_double_type_assertion']);
   assert.deepEqual(typesIn('const y = (x) as any;'), ['unsafe_type_assertion']);
+  assert.deepEqual(typesIn('const y = <B>(<A>x);'), ['unsafe_double_type_assertion']);
+  // `as const` is not a cast, so it does not start a chain.
+  assert.deepEqual(typesIn('const y = (x as const) as B;'), ['type_assertion']);
   assert.deepEqual(findUnsafeAssertions('const y = (x as A) as B;', 'x.ts').map(cast => cast.assertionForm), ['chained_as']);
 });
 
