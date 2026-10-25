@@ -168,6 +168,33 @@ test('placeholder credentials are reported', () => {
   }
 });
 
+test('placeholder values in more forms are reported', () => {
+  for (const value of ['<API_KEY>', 'Bearer <API_KEY>', 'INSERT_API_KEY_HERE', 'postgres://user:password@localhost:5432/app',
+    'noreply@yourdomain.com', 'https://hooks.slack.com/services/XXX/YYY/ZZZ']) {
+    assert.equal(countOf(`const v = '${value}';`, 'placeholder_value'), 1, value);
+  }
+  assert.equal(countOf("const API_BASE = 'https://api.example.com/v1';", 'placeholder_value'), 1);
+  assert.equal(countOf("export const cfg = { baseUrl: 'https://example.org' };", 'placeholder_value'), 1);
+});
+
+test('a hard-coded fallback for a secret environment variable is reported', () => {
+  assert.equal(countOf("const s = process.env.SESSION_PASSWORD ?? 'supersecretpassword';", 'placeholder_value'), 1);
+  assert.equal(countOf("const s = import.meta.env.VITE_API_KEY || 'abc';", 'placeholder_value'), 1);
+  assert.equal(countOf("const s = process.env.SESSION_PASSWORD ?? '';", 'placeholder_value'), 0);
+  assert.equal(countOf("const port = process.env.PORT || '3000';", 'placeholder_value'), 0);
+  assert.equal(countOf("const k = process.env.CACHE_KEY || 'v1';", 'placeholder_value'), 0);
+  assert.equal(countOf("const s = process.env.JWT_SECRET || process.env.OLD_SECRET || 'secret';", 'placeholder_value'), 1);
+});
+
+test('example domains passed to a call and usage text are not placeholder values', () => {
+  assert.equal(countOf("const u = new URL(path, 'http://example.com');", 'placeholder_value'), 0);
+  assert.equal(countOf("const usage = 'Usage: tool --token <your-token>';", 'placeholder_value'), 0);
+  assert.equal(countOf("const f = format(d, 'HH:mm xxx');", 'placeholder_value'), 0);
+  for (const value of ['insert_id', 'ADD_USER_ID', 'REPLACE_TOKEN', 'add_key']) {
+    assert.equal(countOf(`const t = '${value}';`, 'placeholder_value'), 0, value);
+  }
+});
+
 test('ordinary status values are not placeholder values', () => {
   assert.equal(countOf("const s = 'todo'; if (t.status === 'fixme') {}", 'placeholder_value'), 0);
 });
