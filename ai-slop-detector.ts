@@ -411,7 +411,7 @@ class AISlopDetector {
    * Run detection across the codebase or the explicit target paths.
    */
   async detect(quiet: boolean = false) {
-    console.log('Scanning for AI slop patterns...\n');
+    console.log('Scanning...\n');
     // A detector can be reused; each scan starts from a clean slate.
     this.issues = [];
     this.lineCounts.clear();
