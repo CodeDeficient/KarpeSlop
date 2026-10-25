@@ -76,6 +76,18 @@ test('catch block with an explanatory comment is not reported', () => {
   assert.equal(countOf('try { a(); } catch { /* best effort */ }', 'empty_catch'), 0);
 });
 
+test('empty catch that falls through to a fallback is not reported', () => {
+  assert.equal(countOf('function f(c: string) {\n  try { return new TextDecoder(c); } catch {}\n  return new TextDecoder();\n}', 'empty_catch'), 0);
+  assert.equal(countOf('function f(c?: string) {\n  if (c) {\n    try { return decode(c); } catch (_) {}\n  }\n  return null;\n}', 'empty_catch'), 0);
+  assert.equal(countOf('function f(xs: string[]) {\n  for (const x of xs) {\n    try { return load(x); } catch {}\n  }\n  throw new Error("none");\n}', 'empty_catch'), 0);
+});
+
+test('empty catch with nothing after it, or a try that does not return, is reported', () => {
+  assert.equal(countOf('function f() {\n  try { return load(); } catch {}\n}', 'empty_catch'), 1);
+  assert.equal(countOf('function f() {\n  try { save(); } catch {}\n  return 1;\n}', 'empty_catch'), 1);
+  assert.equal(countOf('function f() {\n  const g = () => { try { return load(); } catch {} };\n  return g;\n}', 'empty_catch'), 1);
+});
+
 // ---------------------------------------------------------------------------
 // placeholder_value
 // ---------------------------------------------------------------------------
