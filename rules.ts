@@ -921,12 +921,12 @@ function isIgnoredBinding(name: ts.BindingName | undefined): boolean {
   return name !== undefined && ts.isIdentifier(name) && name.text.startsWith('_');
 }
 
-/** A `return` (or, with `orThrow`, a `throw`) in this node or below it, not in a nested function. */
-function containsReturn(root: ts.Node, orThrow = false): boolean {
+/** A `return` in this node or below it, not in a nested function. */
+function containsReturn(root: ts.Node): boolean {
   let found = false;
   const visit = (node: ts.Node) => {
     if (found || ts.isFunctionLike(node)) return;
-    if (ts.isReturnStatement(node) || (orThrow && ts.isThrowStatement(node))) {
+    if (ts.isReturnStatement(node)) {
       found = true;
       return;
     }
@@ -940,8 +940,9 @@ function containsReturn(root: ts.Node, orThrow = false): boolean {
  * `try { return parse(x); } catch {}` followed by more code: the catch falls
  * through to a fallback (the code after the try, or the next loop iteration),
  * so the error is handled by design rather than swallowed. When the return is
- * only a fast path inside the try, the code after it must itself return or
- * throw, so an unrelated statement after the try is not taken for a fallback.
+ * only a fast path inside the try, the code after it must end in a return or
+ * throw, so a conditional return or an unrelated statement after the try is
+ * not taken for a fallback.
  */
 function isFallbackCatch(clause: ts.CatchClause): boolean {
   const tryStatement = clause.parent;
@@ -954,7 +955,8 @@ function isFallbackCatch(clause: ts.CatchClause): boolean {
     if (endsWithReturn && ts.isIterationStatement(parent, false)) return true;
     if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isCaseOrDefaultClause(parent)) {
       const rest = parent.statements.slice(parent.statements.findIndex(statement => statement === current) + 1);
-      if (rest.length > 0 && (endsWithReturn || rest.some(statement => containsReturn(statement, true)))) return true;
+      const after = rest.at(-1);
+      if (after !== undefined && (endsWithReturn || ts.isReturnStatement(after) || ts.isThrowStatement(after))) return true;
     }
     current = parent;
   }
