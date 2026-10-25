@@ -380,6 +380,14 @@ test('restating comment: repeats the next line', () => {
   assert.equal(countOf('// Fetch the user data\nconst data = await fetchUser(id);', 'restating_comment'), 1);
 });
 
+test('restating comment: one-word section labels are not reported', () => {
+  assert.equal(countOf("const rules = {\n  // Imports\n  'import/first': 'error',\n};", 'restating_comment'), 0);
+  assert.equal(countOf('// Email\nexport type EmailParams = { email: string };', 'restating_comment'), 0);
+  assert.equal(countOf('// ZodEmail\nexport const ZodEmail = 1;', 'restating_comment'), 0);
+  assert.equal(countOf('//////////   ZodGUID   //////////\nexport const ZodGUID = 1;', 'restating_comment'), 0);
+  assert.equal(countOf('// ZodString.init(inst, def);\nZodString.init(inst, def);', 'restating_comment'), 0);
+});
+
 test('restating comment: explanations and documented assumptions are not reported', () => {
   assert.equal(countOf('// Retry because the API rate-limits bursts\nretry(call);', 'restating_comment'), 0);
   assert.equal(countOf('// Assumes the input is sorted; binary search depends on it.\nfind(xs, t);', 'restating_comment'), 0);
