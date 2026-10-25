@@ -965,6 +965,7 @@ function containsReturn(root: ts.Node): boolean {
  */
 function isFallbackCatch(clause: ts.CatchClause): boolean {
   const tryStatement = clause.parent;
+  if (assignsOnlyOuterVariables(tryStatement)) return true;
   const last = tryStatement.tryBlock.statements.at(-1);
   const endsWithReturn = last !== undefined && ts.isReturnStatement(last);
   if (!endsWithReturn && !containsReturn(tryStatement.tryBlock)) return false;
@@ -978,6 +979,108 @@ function isFallbackCatch(clause: ts.CatchClause): boolean {
       if (after !== undefined && (endsWithReturn || ts.isReturnStatement(after) || ts.isThrowStatement(after))) return true;
     }
     current = parent;
+  }
+  return false;
+}
+
+/**
+ * `let found = fallback; try { found = probe(); } catch {}` and then a read of
+ * `found`: the value the variable already holds is the fallback, the same as
+ * a return after the try.
+ */
+function assignsOnlyOuterVariables(tryStatement: ts.TryStatement): boolean {
+  const statements = tryStatement.tryBlock.statements;
+  if (statements.length === 0) return false;
+  const scope = enclosingFunctionOrFile(tryStatement);
+  return statements.every(statement => {
+    if (!ts.isExpressionStatement(statement)) return false;
+    const expr = statement.expression;
+    if (!ts.isBinaryExpression(expr) || expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken || !ts.isIdentifier(expr.left)) return false;
+    const name = expr.left.text;
+    return declaresBefore(scope, name, tryStatement) && readsAfter(scope, name, tryStatement.end);
+  });
+}
+
+/** A `let`/`var` declaration of `name` in `scope`, before `tryStatement` and in a block that contains it. */
+function declaresBefore(scope: ts.Node, name: string, tryStatement: ts.TryStatement): boolean {
+  const pos = tryStatement.pos;
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found || node.pos >= pos) return;
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name && node.end <= pos &&
+      ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) === 0 &&
+      rangeContains(node.parent.parent.parent, tryStatement.pos)) {
+      found = true;
+      return;
+    }
+    if (node !== scope && ts.isFunctionLike(node)) return;
+    ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return found;
+}
+
+/** The identifier reads a variable: not a property name, a declared name or the target of `=`. */
+function isVariableRead(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  if ((ts.isPropertyAccessExpression(parent) && parent.name === node) || (ts.isQualifiedName(parent) && parent.right === node)) return false;
+  if ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent) ||
+    ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent)) && parent.name === node) return false;
+  return !isAssignmentTarget(node);
+}
+
+/** `x = …`, or `x` inside a destructuring target: `({ x } = src)`, `[x] = pair`. */
+function isAssignmentTarget(node: ts.Identifier): boolean {
+  let child: ts.Node = node;
+  let parent = node.parent;
+  // `({ a = x } = src)` reads x as a default, so only the shorthand's name is a target.
+  while ((ts.isShorthandPropertyAssignment(parent) && parent.name === child) || ts.isSpreadAssignment(parent) || ts.isSpreadElement(parent) ||
+    (ts.isPropertyAssignment(parent) && parent.initializer === child) ||
+    ts.isObjectLiteralExpression(parent) || ts.isArrayLiteralExpression(parent)) {
+    child = parent;
+    parent = parent.parent;
+  }
+  return ts.isBinaryExpression(parent) && parent.left === child && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+}
+
+/** The binding declares `name`: `x`, `{ x }`, `[, x]`. */
+function bindsName(binding: ts.BindingName, name: string): boolean {
+  if (ts.isIdentifier(binding)) return binding.text === name;
+  return binding.elements.some(element => !ts.isOmittedExpression(element) && bindsName(element.name, name));
+}
+
+/**
+ * A read of `name` in `scope` after `pos`. An assignment target does not
+ * count, and neither does code after `pos` that declares its own `name`.
+ */
+function readsAfter(scope: ts.Node, name: string, pos: number): boolean {
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found || node.end <= pos) return;
+    if (node !== scope && node.pos >= pos && declaresOwn(node, name)) return;
+    if (ts.isIdentifier(node) && node.text === name && node.pos >= pos && isVariableRead(node)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return found;
+}
+
+/** The node opens a scope with its own `name`: a parameter, a catch binding, a loop or block `let`/`const`, a function-body `var`. */
+function declaresOwn(node: ts.Node, name: string): boolean {
+  const declares = (list: ts.VariableDeclarationList) => list.declarations.some(declaration => bindsName(declaration.name, name));
+  if (ts.isFunctionLike(node)) return node.parameters.some(parameter => bindsName(parameter.name, name));
+  if (ts.isCatchClause(node)) return node.variableDeclaration !== undefined && bindsName(node.variableDeclaration.name, name);
+  if (ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
+    const init = node.initializer;
+    return init !== undefined && ts.isVariableDeclarationList(init) && (init.flags & ts.NodeFlags.BlockScoped) !== 0 && declares(init);
+  }
+  if (ts.isBlock(node)) {
+    const functionBody = ts.isFunctionLike(node.parent);
+    return node.statements.some(statement => ts.isVariableStatement(statement) &&
+      (functionBody || (statement.declarationList.flags & ts.NodeFlags.BlockScoped) !== 0) && declares(statement.declarationList));
   }
   return false;
 }
