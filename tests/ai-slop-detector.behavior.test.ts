@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  AISlopDetector,
   findUnsafeAssertions,
   hasOnlyFreshPackageWarnings,
   isExcludedPath,
@@ -14,6 +15,7 @@ import {
   shouldAnalyzePathInQuietMode,
   splitCliArgs,
 } from '../ai-slop-detector.ts';
+import { npmRegistryLookup } from '../imports.ts';
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -542,4 +544,28 @@ test('a full scan includes hand-written files under types/', () => {
   } finally {
     fs.rmSync(projectDir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// npm registry requests
+// ---------------------------------------------------------------------------
+
+test('npm registry requests send a karpeslop User-Agent', async (t) => {
+  const { version } = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf-8'));
+  const userAgents: Array<string | null> = [];
+  t.mock.method(globalThis, 'fetch', async (_url: string, init?: RequestInit) => {
+    userAgents.push(new Headers(init?.headers).get('User-Agent'));
+    return new Response('{"time":{}}', { status: 200 });
+  });
+  const savedOffline = process.env.KARPESLOP_OFFLINE;
+  delete process.env.KARPESLOP_OFFLINE;
+
+  try {
+    await npmRegistryLookup('left-pad');
+    await new AISlopDetector(process.cwd())['getNpmPackageAge']('left-pad', '1.0.0');
+  } finally {
+    if (savedOffline !== undefined) process.env.KARPESLOP_OFFLINE = savedOffline;
+  }
+
+  assert.deepEqual(userAgents, [`karpeslop/${version}`, `karpeslop/${version}`]);
 });
