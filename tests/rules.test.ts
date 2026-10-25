@@ -58,8 +58,21 @@ test('elided code comments are reported', () => {
   }
 });
 
+test('elided code in other wordings, block comments and JSX is reported', () => {
+  for (const comment of ['// Add more cases as needed', '// [existing code here]', '// ... other methods remain the same',
+    '/* Handle other actions similarly */', '/* ... more routes */', '// (code omitted for brevity)', '// rest of the checkout form']) {
+    assert.equal(countOf(`${comment}\nexport {};\n`, 'elided_code_comment'), 1, comment);
+  }
+  assert.equal(countOf('const f = () => <form>\n  {/* ... other fields ... */}\n</form>;', 'elided_code_comment', 'x.tsx'), 1);
+});
+
 test('ordinary comments mentioning "rest" are not elided-code comments', () => {
   assert.equal(countOf('// Spread the rest of the props onto the input\nexport {};\n', 'elided_code_comment'), 0);
+  for (const comment of ['// The other fields here are optional', '// Rest of the array is already sorted',
+    '// ...props,', '/** ... rest of the code */', '// ... then we retry with backoff', '/* ... see RFC 7231 */', '// Retry the remaining items after a delay']) {
+    assert.equal(countOf(`${comment}\nexport {};\n`, 'elided_code_comment'), 0, comment);
+  }
+  assert.equal(countOf('// We batch requests here\n// ... and flush them on idle\nexport {};\n', 'elided_code_comment'), 0);
 });
 
 // ---------------------------------------------------------------------------
