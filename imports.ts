@@ -110,6 +110,9 @@ interface PackageScope {
   declared: Set<string>;
 }
 
+/** The extension part of a module file name: `.js`, `.d.ts`, `.cjs`, `.json` and so on. */
+const MODULE_EXTENSION = /^(\.d)?\.[cm]?[jt]sx?$|^\.(json|node|wasm)$/;
+
 class PackageIndex {
   private manifestCache = new Map<string, Record<string, unknown> | undefined>();
   private scopeCache = new Map<string, PackageScope>();
@@ -174,7 +177,9 @@ class PackageIndex {
     const folder = path.dirname(target);
     const base = path.basename(target);
     try {
-      if (fs.readdirSync(folder).some(entry => entry === base || entry.startsWith(`${base}.`))) return true;
+      // `foo` resolves to `foo.js` or `foo.d.ts`, not to a sibling such as `foo.internal.js`.
+      if (fs.readdirSync(folder).some(entry => entry === base ||
+        (entry.startsWith(`${base}.`) && MODULE_EXTENSION.test(entry.slice(base.length))))) return true;
     } catch {
       // The folder itself is missing; the exports map can still provide the subpath.
     }

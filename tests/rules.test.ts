@@ -525,6 +525,7 @@ test('checkImports: a subpath an installed package does not have is reported', a
     'node_modules/lib/index.js': 'module.exports = {};\n',
     'node_modules/lib/debounce.js': 'module.exports = {};\n',
     'node_modules/lib/dist/style.css': '',
+    'node_modules/lib/parse.internal.js': '',
     'node_modules/mapped/package.json': JSON.stringify({ name: 'mapped', exports: { '.': './index.js', './locale/*': './dist/locale/*.js', './legacy/': './lib/', './a*a': './x.js' } }),
     'src/a.js': [
       "import debounce from 'lib/debounce';",
@@ -533,7 +534,8 @@ test('checkImports: a subpath an installed package does not have is reported', a
       "import fr from 'mapped/locale/fr';",
       "import x from 'mapped/missing';",
       "import old from 'mapped/legacy/thing';",
-      "import aa from 'mapped/a';"
+      "import aa from 'mapped/a';",
+      "import parse from 'lib/parse';"
     ].join('\n') + '\n'
   });
   try {
@@ -541,7 +543,8 @@ test('checkImports: a subpath an installed package does not have is reported', a
     assert.deepEqual(findings.map(f => [f.type, f.line, f.message]), [
       ['hallucinated_import', 3, "'lib' has no module 'debounceAsync'."],
       ['hallucinated_import', 5, "'mapped' has no module 'missing'."],
-      ['hallucinated_import', 7, "'mapped' has no module 'a'."]
+      ['hallucinated_import', 7, "'mapped' has no module 'a'."],
+      ['hallucinated_import', 8, "'lib' has no module 'parse'."]
     ]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
