@@ -30,6 +30,8 @@ const globEscape = glob.escape;
 
 const SEVERITIES: readonly Severity[] = ['critical', 'high', 'medium', 'low'];
 const OVERRIDE_SEVERITIES: ReadonlyArray<Severity | 'off'> = [...SEVERITIES, 'off'];
+/** Every rule id KarpeSlop reports itself. fresh_package_version comes from the registry check, not RULES. */
+const BUILT_IN_RULE_IDS: ReadonlySet<string> = new Set([...RULES.map(rule => rule.id), 'fresh_package_version']);
 
 interface AISlopIssue {
   type: string;
@@ -298,6 +300,7 @@ class AISlopDetector {
       if (!Array.isArray(cfg.customPatterns)) {
         throw new Error('customPatterns must be an array');
       }
+      const customIds = new Set<string>();
       result.customPatterns = cfg.customPatterns.map((entry: unknown, i: number) => {
         const pattern = asRecord(entry) ?? {};
         const { id, message, severity } = pattern;
@@ -305,6 +308,14 @@ class AISlopDetector {
         if (typeof id !== 'string' || id === '') {
           throw new Error(`customPatterns[${i}].id must be a string`);
         }
+        // A shared id would make severityOverrides and the exit code treat two rules as one.
+        if (BUILT_IN_RULE_IDS.has(id)) {
+          throw new Error(`customPatterns[${i}].id '${id}' is a built-in rule id; choose another`);
+        }
+        if (customIds.has(id)) {
+          throw new Error(`customPatterns[${i}].id '${id}' is used by another custom pattern`);
+        }
+        customIds.add(id);
         if (typeof source !== 'string' || source === '') {
           throw new Error(`customPatterns[${i}].pattern must be a string`);
         }

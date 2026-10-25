@@ -99,7 +99,7 @@ Create `.karpesloprc.json` in your project root:
 
 There are no inline suppression comments. A comment that silences the linter is easy for anyone, or any tool, to add next to the problem it hides. Changing a rule's severity, or turning it off, goes through `severityOverrides`, where it shows up in review.
 
-`customPatterns` are plain regexes matched line by line.
+`customPatterns` are plain regexes matched line by line. Each needs an `id` of its own: a built-in rule id or one used by another pattern is rejected.
 
 ## Limitations
 

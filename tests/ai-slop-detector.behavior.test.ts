@@ -727,6 +727,28 @@ test('finding density counts application code only', async t => {
   }
 });
 
+test('a custom pattern cannot reuse a built-in or another custom pattern\'s id', () => {
+  for (const id of ['fresh_package_version', 'empty_catch']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-custom-id-'));
+    try {
+      fs.writeFileSync(path.join(dir, '.karpesloprc.json'), JSON.stringify({
+        customPatterns: [{ id, pattern: 'x', message: 'm', severity: 'high' }]
+      }));
+      assert.throws(() => new AISlopDetector(dir), new RegExp(`customPatterns\\[0\\]\\.id '${id}' is a built-in rule id`));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-custom-id-'));
+  try {
+    const pattern = { id: 'no_foo', pattern: 'foo', message: 'm', severity: 'high' };
+    fs.writeFileSync(path.join(dir, '.karpesloprc.json'), JSON.stringify({ customPatterns: [pattern, pattern] }));
+    assert.throws(() => new AISlopDetector(dir), /customPatterns\[1\]\.id 'no_foo' is used by another custom pattern/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('an invalid config stops the run with exit 1 instead of falling back to defaults', () => {
   const dir = path.resolve(process.cwd(), 'tests/invalid-config');
   const result = spawnSync(
