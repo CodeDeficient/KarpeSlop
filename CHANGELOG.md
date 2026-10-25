@@ -25,6 +25,9 @@ Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript 
 - Messages describe the code, not its author. Fix text is only shown when the fix is certain; otherwise the finding says what to check and links the relevant docs.
 - Removed the Karpathy attribution, quote and trademark symbol from the README, package description and CLI output.
 
+### Fixed
+- One failed package age check no longer discards the results of all the others. The failure is printed with the package name and version.
+
 ## [1.0.30] - 2026-07-27
 
 ### Breaking
