@@ -199,6 +199,25 @@ test('empty catch with nothing after it, or a try that does not return, is repor
   assert.equal(countOf('function f() {\n  const g = () => { try { return load(); } catch {} };\n  return g;\n}', 'empty_catch'), 1);
 });
 
+test('empty catch: a variable assigned in the try keeps its earlier value as the fallback', () => {
+  for (const code of [
+    'function f(s: S) {\n  let recursive = true;\n  try {\n    recursive = isRecursive(s);\n  } catch {}\n  return recursive;\n}',
+    'async function isDir(p: string) {\n  let dir;\n  try {\n    dir = (await stat(p)).isDirectory();\n  } catch {}\n  return dir;\n}',
+    'let als: unknown;\nfor (const probe of probes) {\n  try {\n    als = probe();\n  } catch {}\n  if (als) break;\n}'
+  ]) {
+    assert.equal(countOf(code, 'empty_catch'), 0, code);
+  }
+  for (const code of [
+    'function f() {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n}',
+    'function f() {\n  try {\n    cache = load();\n  } catch {}\n  return cache;\n}',
+    'function f() {\n  let x = 1;\n  try {\n    x = load();\n    save(x);\n  } catch {}\n  return x;\n}',
+    'function f(res: R) {\n  let ok = false;\n  try {\n    ok = probe();\n  } catch {}\n  return res.ok;\n}',
+    'function f(a: boolean) {\n  if (a) { let x = 1; use(x); }\n  try {\n    x = load();\n  } catch {}\n  return x;\n}'
+  ]) {
+    assert.equal(countOf(code, 'empty_catch'), 1, code);
+  }
+});
+
 test('swallowed error: a catch that only logs is reported', () => {
   assert.equal(countOf('async function f() {\n  try { await save(); } catch (err) {\n    console.error("Failed to save", err);\n  }\n}', 'swallowed_error'), 1);
   assert.equal(countOf('try { a(); } catch (e) { console.log(e); console.warn("again"); }', 'swallowed_error'), 1);

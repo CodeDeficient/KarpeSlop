@@ -965,6 +965,7 @@ function containsReturn(root: ts.Node): boolean {
  */
 function isFallbackCatch(clause: ts.CatchClause): boolean {
   const tryStatement = clause.parent;
+  if (assignsOnlyOuterVariables(tryStatement)) return true;
   const last = tryStatement.tryBlock.statements.at(-1);
   const endsWithReturn = last !== undefined && ts.isReturnStatement(last);
   if (!endsWithReturn && !containsReturn(tryStatement.tryBlock)) return false;
@@ -980,6 +981,67 @@ function isFallbackCatch(clause: ts.CatchClause): boolean {
     current = parent;
   }
   return false;
+}
+
+/**
+ * `let found = fallback; try { found = probe(); } catch {}` and then a read of
+ * `found`: the value the variable already holds is the fallback, the same as
+ * a return after the try.
+ */
+function assignsOnlyOuterVariables(tryStatement: ts.TryStatement): boolean {
+  const statements = tryStatement.tryBlock.statements;
+  if (statements.length === 0) return false;
+  const scope = enclosingFunctionOrFile(tryStatement);
+  return statements.every(statement => {
+    if (!ts.isExpressionStatement(statement)) return false;
+    const expr = statement.expression;
+    if (!ts.isBinaryExpression(expr) || expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken || !ts.isIdentifier(expr.left)) return false;
+    const name = expr.left.text;
+    return declaresBefore(scope, name, tryStatement) && readsAfter(scope, name, tryStatement.end);
+  });
+}
+
+/** A `let`/`var` declaration of `name` in `scope`, before `tryStatement` and in a block that contains it. */
+function declaresBefore(scope: ts.Node, name: string, tryStatement: ts.TryStatement): boolean {
+  const pos = tryStatement.pos;
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found || node.pos >= pos) return;
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name && node.end <= pos &&
+      ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) === 0 &&
+      rangeContains(node.parent.parent.parent, tryStatement.pos)) {
+      found = true;
+      return;
+    }
+    if (node !== scope && ts.isFunctionLike(node)) return;
+    ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return found;
+}
+
+/** The identifier reads a variable: not a property name, a declared name or the target of `=`. */
+function isVariableRead(node: ts.Identifier): boolean {
+  const parent = node.parent;
+  if ((ts.isPropertyAccessExpression(parent) && parent.name === node) || (ts.isQualifiedName(parent) && parent.right === node)) return false;
+  if ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent) ||
+    ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent)) && parent.name === node) return false;
+  return !(ts.isBinaryExpression(parent) && parent.left === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken);
+}
+
+/** A read of `name` in `scope` after `pos` (an assignment target does not count). */
+function readsAfter(scope: ts.Node, name: string, pos: number): boolean {
+  let found = false;
+  const visit = (node: ts.Node) => {
+    if (found || node.end <= pos) return;
+    if (ts.isIdentifier(node) && node.text === name && node.pos >= pos && isVariableRead(node)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(scope);
+  return found;
 }
 
 function enclosingFunctionOrFile(node: ts.Node): ts.Node {
