@@ -22,7 +22,7 @@ import {
   type Severity,
   type UnsafeAssertionFinding
 } from './rules.ts';
-import { checkImports, npmRegistryLookup, type RegistryLookup } from './imports.ts';
+import { checkImports, npmRegistryLookup, NPM_REGISTRY_HEADERS, ownVersion, type RegistryLookup } from './imports.ts';
 
 const globSync = glob.sync;
 const globEscape = glob.escape;
@@ -771,7 +771,7 @@ class AISlopDetector {
       const timer = setTimeout(() => controller.abort(), 5000);
       // The timeout covers the body as well as the headers.
       try {
-        const response = await fetch(url, { signal: controller.signal });
+        const response = await fetch(url, { headers: NPM_REGISTRY_HEADERS, signal: controller.signal });
         if (!response.ok) return null;
         const body: unknown = await response.json();
         for (const [key, value] of Object.entries(asRecord(asRecord(body)?.time) ?? {})) {
@@ -1005,13 +1005,7 @@ async function runIfMain() {
   }
 
   if (flagArgs.includes('--version') || flagArgs.includes('-v')) {
-    try {
-      const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
-      const packageData = asRecord(JSON.parse(fs.readFileSync(packagePath, 'utf8')));
-      console.log(`karpeslop/${optionalString(packageData?.version) ?? 'unknown'} ${process.platform}-${process.arch} node-${process.version}`);
-    } catch {
-      console.log('karpeslop/unknown');
-    }
+    console.log(`karpeslop/${ownVersion()} ${process.platform}-${process.arch} node-${process.version}`);
     process.exit(0);
   }
 
