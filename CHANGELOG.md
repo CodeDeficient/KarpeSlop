@@ -2,9 +2,14 @@
 
 All notable changes will be documented in this file.
 
-## [Unreleased]
+## [2.0.0] - 2026-10-25
 
 Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript codebases (zustand `src`, TanStack Query `query-core/src` and `react-query/src`) and a file with eight planted mistakes typical of generated code. Before: 300 findings on the clean code, mostly false positives, and 1 of 8 planted mistakes caught. After: every finding on the clean code is a real cast, `any`, `!`, TODO or restating comment, and 8 of 8 planted mistakes are caught.
+
+### Upgrading from 1.x
+- Remove `severityOverrides` entries for the removed rule ids listed below. They are ignored now. The replacement ids are listed next to each removed rule.
+- CI that fails on any finding should expect exit 1 only for medium severity and above.
+- Anything that read the slop score from the output should read the per-severity counts instead.
 
 ### Breaking
 - **Rules rebuilt on the TypeScript AST.** Built-in rules no longer match lines of text, so strings, JSX text and multi-line code are handled correctly. User `customPatterns` are still line regexes.
