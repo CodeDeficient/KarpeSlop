@@ -916,42 +916,45 @@ function declaresName(sourceFile: ts.SourceFile, name: string): boolean {
   return found;
 }
 
-/** `catch (_)` or `catch (_error)`: the underscore is the usual way to say "unused on purpose". */
-function isIgnoredBinding(clause: ts.CatchClause): boolean {
-  const name = clause.variableDeclaration?.name;
+/** `catch (_)` or `.catch((_error) => {})`: the underscore is the usual way to say "unused on purpose". */
+function isIgnoredBinding(name: ts.BindingName | undefined): boolean {
   return name !== undefined && ts.isIdentifier(name) && name.text.startsWith('_');
 }
 
-/** A `return` in this block or its nested blocks, not in a nested function. */
-function containsReturn(block: ts.Block): boolean {
+/** A `return` (or, with `orThrow`, a `throw`) in this node or below it, not in a nested function. */
+function containsReturn(root: ts.Node, orThrow = false): boolean {
   let found = false;
   const visit = (node: ts.Node) => {
     if (found || ts.isFunctionLike(node)) return;
-    if (ts.isReturnStatement(node)) {
+    if (ts.isReturnStatement(node) || (orThrow && ts.isThrowStatement(node))) {
       found = true;
       return;
     }
     ts.forEachChild(node, visit);
   };
-  ts.forEachChild(block, visit);
+  visit(root);
   return found;
 }
 
 /**
- * `try { return parse(x); } catch {}` followed by more code (the `return` may
- * sit on a fast path inside the try): the catch falls through to a fallback (the code after the try, or the next loop iteration),
- * so the error is handled by design rather than swallowed.
+ * `try { return parse(x); } catch {}` followed by more code: the catch falls
+ * through to a fallback (the code after the try, or the next loop iteration),
+ * so the error is handled by design rather than swallowed. When the return is
+ * only a fast path inside the try, the code after it must itself return or
+ * throw, so an unrelated statement after the try is not taken for a fallback.
  */
 function isFallbackCatch(clause: ts.CatchClause): boolean {
   const tryStatement = clause.parent;
-  if (!containsReturn(tryStatement.tryBlock)) return false;
+  const last = tryStatement.tryBlock.statements.at(-1);
+  const endsWithReturn = last !== undefined && ts.isReturnStatement(last);
+  if (!endsWithReturn && !containsReturn(tryStatement.tryBlock)) return false;
   let current: ts.Node = tryStatement;
   while (!ts.isFunctionLike(current.parent) && !ts.isSourceFile(current)) {
     const parent = current.parent;
-    if (ts.isIterationStatement(parent, false)) return true;
+    if (endsWithReturn && ts.isIterationStatement(parent, false)) return true;
     if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isCaseOrDefaultClause(parent)) {
-      const index = parent.statements.findIndex(statement => statement === current);
-      if (index < parent.statements.length - 1) return true;
+      const rest = parent.statements.slice(parent.statements.findIndex(statement => statement === current) + 1);
+      if (rest.length > 0 && (endsWithReturn || rest.some(statement => containsReturn(statement, true)))) return true;
     }
     current = parent;
   }
@@ -1044,7 +1047,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
 
     if (ts.isCatchClause(node) && node.block.statements.length === 0 &&
-      commentsWithin(node.block).length === 0 && !isFallbackCatch(node) && !isIgnoredBinding(node)) {
+      commentsWithin(node.block).length === 0 && !isFallbackCatch(node) && !isIgnoredBinding(node.variableDeclaration?.name)) {
       report('empty_catch', node);
     }
 
@@ -1062,7 +1065,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       const handler = node.arguments[0];
       if ((ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) && ts.isBlock(handler.body) &&
         handler.body.statements.length === 0 &&
-        commentsWithin(handler.body).length === 0) {
+        commentsWithin(handler.body).length === 0 && !isIgnoredBinding(handler.parameters[0]?.name)) {
         report('empty_catch', node.expression.name);
       }
     }
