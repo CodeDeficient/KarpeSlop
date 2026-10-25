@@ -223,7 +223,7 @@ export function scriptKindFor(fileName: string): ts.ScriptKind {
   return ts.ScriptKind.TS;
 }
 
-/** Casts and `any` exist only in TypeScript, so those rules skip JavaScript files. */
+/** Casts, `any` and `!` exist only in TypeScript, so those rules skip JavaScript files. */
 function isTypeScriptFile(fileName: string): boolean {
   const kind = scriptKindFor(fileName);
   return kind === ts.ScriptKind.TS || kind === ts.ScriptKind.TSX;
@@ -815,7 +815,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       report('type_assertion', node);
     }
 
-    if (ts.isNonNullExpression(node)) {
+    if (ts.isNonNullExpression(node) && isTypeScript) {
       report('non_null_assertion', node);
     }
 

@@ -142,6 +142,17 @@ test('casts: each link of a longer chain is reported; any is reported too; plain
   assert.deepEqual(findUnsafeAssertions('const y = (x as A) as B;', 'x.ts').map(cast => cast.assertionForm), ['chained_as']);
 });
 
+test('cast, any and non-null rules run on TypeScript files only', () => {
+  const code = 'const a = v as any;\nconst b = v as Foo;\nlet c: any;\nconst d = m.get(k)!;\n';
+  const typeRules = ['unsafe_type_assertion', 'type_assertion', 'any_type_usage', 'non_null_assertion'];
+  for (const fileName of ['x.ts', 'x.tsx', 'x.mts', 'x.cts']) {
+    assert.deepEqual(typesIn(code, fileName).filter(type => typeRules.includes(type)).sort(), [...typeRules].sort(), fileName);
+  }
+  for (const fileName of ['x.js', 'x.jsx', 'x.mjs', 'x.cjs']) {
+    assert.deepEqual(typesIn(code, fileName).filter(type => typeRules.includes(type)), [], fileName);
+  }
+});
+
 test('non-null assertions are reported', () => {
   assert.equal(countOf('const a = map.get(k)!;', 'non_null_assertion'), 1);
   assert.equal(countOf('if (a !== b) {}', 'non_null_assertion'), 0);
