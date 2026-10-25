@@ -458,7 +458,7 @@ class AISlopDetector {
     if (this.targetPaths.length > 0) {
       const resolvedTargetFiles = this.resolveTargetPaths();
       if (resolvedTargetFiles.length === 0) {
-        throw new Error('No valid target files found for the supplied paths');
+        throw new UsageError('None of the given paths is a file KarpeSlop can scan (see the warnings above).');
       }
       filesToAnalyze = quiet
         ? resolvedTargetFiles.filter(file => this.shouldAnalyzeInQuietMode(file))
@@ -1127,7 +1127,11 @@ async function runIfMain() {
 
     process.exit(exitCodeFor(issues, failOn));
   } catch (error) {
-    console.error('KarpeSlop failed:', error);
+    if (error instanceof UsageError) {
+      console.error(`KarpeSlop: ${error.message}`);
+    } else {
+      console.error('KarpeSlop failed:', error);
+    }
     process.exit(1);
   }
 }

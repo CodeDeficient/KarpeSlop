@@ -594,6 +594,18 @@ test('exit code: high and critical fail by default, --fail-on moves the threshol
   assert.throws(() => failOnFrom(['--fail-on=warning']), /--fail-on must be one of: critical, high, medium, low/);
 });
 
+test('a path that cannot be scanned gives a one-line error, not a stack trace', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts'), 'does-not-exist.ts'],
+    { encoding: 'utf-8', cwd: os.tmpdir(), env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Target path does not exist, skipping: .*does-not-exist\.ts/);
+  assert.match(result.stderr, /KarpeSlop: None of the given paths is a file KarpeSlop can scan/);
+  assert.equal(/\n\s+at /.test(result.stderr), false, result.stderr);
+});
+
 test('unknown flags are rejected instead of silently ignored', () => {
   assert.deepEqual(unknownFlags(['--quiet', '-s', '--fail-on=low']), []);
   assert.deepEqual(unknownFlags(['--stirct', '--json', '-dash-file.ts']), ['--stirct', '--json', '-dash-file.ts']);
