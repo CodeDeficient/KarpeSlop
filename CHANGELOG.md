@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- `placeholder_implementation` recognizes "In a production environment, you would ...", "In production you'd ..." and "In a production app, this would ..." over a short body.
 - `placeholder_value` recognizes setup-guide keys (`sk_test_your_stripe_secret_key_here`, `whsec_your_webhook_secret_here`), template credentials for any user name (`postgres:password@`) and hosts that start with `your-` (`https://your-project.supabase.co`). A run of `x` (`'XXXX'`) is reported only when it is stored as a key, token, secret or password: date-fns uses `'XXXX'` and `'xxxxx'` as timezone format tokens and got 12 high-severity findings.
 - `empty_catch` and `swallowed_error` skip a `try` that only assigns variables declared before it and read after it (`let recursive = true; try { recursive = check(s) } catch {}`): the earlier value is the fallback. zod and hono use this pattern for feature probes.
 - `swallowed_error` also reports a catch that logs and then returns `[]`, `{}` or `''`. The caller gets what looks like an empty success. `return null` is still not reported, because a caller can check for it.
