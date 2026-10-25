@@ -5,6 +5,7 @@ All notable changes will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- `--quiet` matches core folders at any depth, so `packages/ui/src/` in a monorepo is scanned. Before, only folders at the repository root counted and a monorepo scanned no files.
 - `unsafe_type_assertion` reports the start of the cast (`value` in `value as any`), like the other cast rules, instead of the `any` keyword. A multi-line cast now reports the line it starts on.
 
 ## [2.0.0] - 2026-10-25
