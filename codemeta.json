@@ -2,7 +2,7 @@
     "@context": "https://raw.githubusercontent.com/codemeta/codemeta/2.0/codemeta.jsonld",
     "@type": "SoftwareSourceCode",
     "name": "KarpeSlop",
-    "description": "Finds the mistakes that slip into unreviewed AI-assisted TypeScript and JavaScript: imports and packages that do not exist, placeholder code, swallowed errors, unchecked fetch responses, any and type casts. AST-based static analysis.",
+    "description": "A linter for the mistakes AI coding tools leave in TypeScript and JavaScript: imports that don't exist, missing packages, placeholder code, swallowed errors and unsafe casts.",
     "version": "2.0.0",
     "license": "https://spdx.org/licenses/MIT.html",
     "codeRepository": "https://github.com/CodeDeficient/karpeslop",
@@ -51,9 +51,5 @@
     "readme": "https://github.com/CodeDeficient/karpeslop#readme",
     "contIntegration": "https://github.com/CodeDeficient/karpeslop/actions",
     "developmentStatus": "active",
-    "isAccessibleForFree": true,
-    "funder": {
-        "@type": "Person",
-        "url": "https://github.com/sponsors/CodeDeficient"
-    }
+    "isAccessibleForFree": true
 }
