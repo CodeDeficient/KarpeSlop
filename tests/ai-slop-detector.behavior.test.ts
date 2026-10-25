@@ -7,6 +7,8 @@ import path from 'node:path';
 
 import {
   AISlopDetector,
+  exitCodeFor,
+  failOnFrom,
   findUnsafeAssertions,
   hasOnlyFreshPackageWarnings,
   isExcludedPath,
@@ -577,6 +579,39 @@ test('a parent directory named test does not turn the whole project into test fi
   }
 });
 
+test('exit code: high and critical fail by default, --fail-on moves the threshold', () => {
+  const medium = [{ type: 'type_assertion', severity: 'medium' as const }];
+  const high = [{ type: 'empty_catch', severity: 'high' as const }];
+  const fresh = [{ type: 'fresh_package_version', severity: 'medium' as const }];
+  assert.equal(exitCodeFor(medium), 0);
+  assert.equal(exitCodeFor(high), 1);
+  assert.equal(exitCodeFor(medium, 'medium'), 1);
+  assert.equal(exitCodeFor(high, 'critical'), 0);
+  assert.equal(exitCodeFor(fresh, 'low'), 0);
+  assert.equal(failOnFrom([]), 'high');
+  assert.equal(failOnFrom(['--fail-on=low', '--fail-on=medium']), 'medium');
+  assert.throws(() => failOnFrom(['--fail-on=warning']), /--fail-on must be one of: critical, high, medium, low/);
+});
+
+test('a cast alone does not fail the run unless --fail-on=medium is given', () => {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-failon-'));
+  fs.writeFileSync(path.join(projectDir, 'index.ts'), 'export const n = (v: unknown) => v as number;\n', 'utf-8');
+  const run = (...flags: string[]) => spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts'), ...flags],
+    { encoding: 'utf-8', cwd: projectDir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+  try {
+    assert.equal(run().status, 0);
+    assert.equal(run('--fail-on=medium').status, 1);
+    const bad = run('--fail-on=warn');
+    assert.equal(bad.status, 1);
+    assert.match(bad.stderr, /--fail-on must be one of/);
+  } finally {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
 test('suppression comments do not hide customPatterns findings', () => {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-custom-'));
   fs.mkdirSync(path.join(projectDir, 'src'));
@@ -607,9 +642,9 @@ test('-- separator lets paths starting with - be treated as targets, not flags',
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-dash-'));
   const fixtureFile = path.join(tmpDir, '-my-file.ts');
 
-  // Write a file with an any-type so there's actual slop to report.
+  // Write a file with an `as any` cast (high) so the run fails.
   // We assert that the file name appears in stdout, proving it was scanned and not dropped.
-  fs.writeFileSync(fixtureFile, 'const x: any = 1;\n', 'utf-8');
+  fs.writeFileSync(fixtureFile, 'const x = 1 as any;\n', 'utf-8');
 
   const result = spawnSync(
     process.execPath,

@@ -57,6 +57,7 @@ npx karpeslop@latest                  # scan the current directory
 npx karpeslop@latest src/ lib/api.ts  # scan specific paths
 npx karpeslop@latest --quiet          # only app/, components/, lib/, hooks/, services/, src/ (at any depth); skip tests
 npx karpeslop@latest --strict         # exit 2 on critical findings
+npx karpeslop@latest --fail-on=medium # also fail on medium findings (casts, any, unchecked fetch)
 npx karpeslop@latest -- -dash-file.ts # paths that start with "-"
 npx karpeslop@latest --help           # list every rule
 ```
@@ -65,8 +66,8 @@ A JSON report is written to `./ai-slop-report.json`.
 
 ### Exit codes
 
-- `0`: nothing at medium severity or above. Low-severity findings and package-age warnings never fail a run.
-- `1`: findings at medium severity or above.
+- `0`: nothing at high severity or above. Package-age warnings never fail a run.
+- `1`: findings at high severity or above. `--fail-on=medium` (or `low`, `critical`) moves the threshold. Medium findings such as a single cast or an `any` are worth a look in review, but most healthy codebases have some, so they do not fail a run by default.
 - `2`: critical findings, with `--strict`.
 
 Set `KARPESLOP_OFFLINE=1` to skip every npm registry request (package age and package existence checks).

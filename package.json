@@ -48,7 +48,7 @@
   "author": "Daniel King <89734689+CodeDeficient@users.noreply.github.com> (https://github.com/CodeDeficient)",
   "license": "MIT",
   "llms": "A TypeScript/JavaScript linter for mistakes common in unreviewed AI-assisted code: named imports the module does not export, packages that do not exist on npm, placeholder bodies, elided code comments, empty catch blocks, unchecked fetch responses, any, type casts and non-null assertions. AST-based. Use: npx karpeslop@latest",
-  "llmsFull": "KarpeSlop is a static analysis tool for TypeScript and JavaScript. Syntax rules run on the TypeScript AST; import checks use real module resolution against installed type declarations, package.json files and the npm registry. It reports findings by rule with severity (critical, high, medium, low), why each matters, and a fix only when the fix is certain. Run with: npx karpeslop@latest. Use --strict in CI to exit 2 on critical findings (wrong imports, nonexistent packages). Writes ai-slop-report.json.",
+  "llmsFull": "KarpeSlop is a static analysis tool for TypeScript and JavaScript. Syntax rules run on the TypeScript AST; import checks use real module resolution against installed type declarations, package.json files and the npm registry. It reports findings by rule with severity (critical, high, medium, low), why each matters, and a fix only when the fix is certain. Run with: npx karpeslop@latest. Exits 1 on high or critical findings (--fail-on=medium to include medium). Use --strict in CI to exit 2 on critical findings (wrong imports, nonexistent packages). Writes ai-slop-report.json.",
   "dependencies": {
     "glob": "13.0.6",
     "tsx": "4.22.4",
