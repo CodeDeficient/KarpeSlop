@@ -19,7 +19,7 @@ import {
   findUnsafeAssertions,
   getRule,
   isFixturePath,
-  isTestPath,
+  isNonProductionPath,
   type Severity,
   type UnsafeAssertionFinding
 } from './rules.ts';
@@ -444,7 +444,7 @@ class AISlopDetector {
     this.summary = {
       filesScanned: codeFiles.length,
       linesScanned: linesIn(codeFiles),
-      applicationLinesScanned: linesIn(codeFiles.filter(file => !this.isTestFile(file)))
+      applicationLinesScanned: linesIn(codeFiles.filter(file => !this.isNonProductionFile(file)))
     };
     this.issues.sort((a, b) =>
       SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
@@ -478,17 +478,17 @@ class AISlopDetector {
   }
 
   private shouldAnalyzeInQuietMode(filePath: string): boolean {
-    return shouldAnalyzePathInQuietMode(filePath, this.rootDir, this.coreAppDirs) && !this.isTestFile(filePath);
+    return shouldAnalyzePathInQuietMode(filePath, this.rootDir, this.coreAppDirs) && !this.isNonProductionFile(filePath);
   }
 
   /**
-   * Test-file check on the path relative to the scan root, so a parent
+   * Test, benchmark or example code, judged on the path relative to the scan root, so a parent
    * directory of the checkout (e.g. ~/test/myapp) never matters. Targets
    * outside the root are judged by file name only.
    */
-  private isTestFile(filePath: string): boolean {
+  private isNonProductionFile(filePath: string): boolean {
     const relativePath = path.relative(this.rootDir, filePath);
-    return relativePath.startsWith('..') ? isTestPath(path.basename(filePath)) : isTestPath(relativePath);
+    return relativePath.startsWith('..') ? isNonProductionPath(path.basename(filePath)) : isNonProductionPath(relativePath);
   }
 
   private isIgnoredByConfig(filePath: string): boolean {
@@ -580,8 +580,8 @@ class AISlopDetector {
     }
 
     const content = fs.readFileSync(filePath, 'utf-8');
-    const isTestFile = this.isTestFile(filePath);
-    if (quiet && isTestFile) return;
+    const isNonProductionFile = this.isNonProductionFile(filePath);
+    if (quiet && isNonProductionFile) return;
     const isCliFile = isCliPath(path.relative(this.rootDir, filePath), content);
 
     // A trailing newline ends the last line; it does not start another one.
@@ -590,7 +590,7 @@ class AISlopDetector {
     for (const finding of analyzeSource(content, filePath)) {
       const rule = getRule(finding.type);
       if (rule === undefined) continue;
-      if (rule.skipTests && isTestFile) continue;
+      if (rule.skipTests && isNonProductionFile) continue;
       if (finding.type === 'production_console_log' && isCliFile) continue;
       this.record({
         type: finding.type,
@@ -629,7 +629,7 @@ class AISlopDetector {
 
   private async analyzeImports(codeFiles: string[], quiet: boolean): Promise<void> {
     // Fixture files are sample input, so their imports never need to resolve.
-    const files = codeFiles.filter(file => !(quiet && this.isTestFile(file)) && !isFixturePath(path.relative(this.rootDir, file)));
+    const files = codeFiles.filter(file => !(quiet && this.isNonProductionFile(file)) && !isFixturePath(path.relative(this.rootDir, file)));
     const findings = await checkImports(files, this.rootDir, this.registryLookup);
     for (const finding of findings) {
       const rule = getRule(finding.type);
@@ -886,7 +886,7 @@ class AISlopDetector {
     const counts = SEVERITIES.map(severity => `${this.issues.filter(issue => issue.severity === severity).length} ${severity}`);
     const files = new Set(this.issues.map(issue => issue.file)).size;
     const { applicationLinesScanned } = this.summary;
-    const applicationFindings = this.issues.filter(issue => this.lineCounts.has(issue.file) && !this.isTestFile(issue.file)).length;
+    const applicationFindings = this.issues.filter(issue => this.lineCounts.has(issue.file) && !this.isNonProductionFile(issue.file)).length;
     const density = applicationLinesScanned > 0
       ? `, ${((applicationFindings / applicationLinesScanned) * 1000).toFixed(1)} per 1,000 lines of application code`
       : '';

@@ -48,7 +48,7 @@ npx karpeslop@latest
 
 The cast rules (`unsafe_*_assertion`, `type_assertion`), `any_type_usage` and `non_null_assertion` only run on TypeScript files. They are skipped for `.js`, `.jsx`, `.mjs` and `.cjs`, which have no `as` casts, type annotations or `!`. JSDoc types such as `/** @type {any} */` are not checked.
 
-Rules marked for application code skip test files (`__tests__/`, `*.test.*`, `*.spec.*`, `test/`, `tests/`, fixtures). Imports in `__fixtures__/` and `__testfixtures__/` are not checked, because those folders hold sample input rather than code that runs.
+Rules marked for application code skip test, benchmark and example code (`__tests__/`, `*.test.*`, `*.spec.*`, `test/`, `tests/`, fixtures, `bench/`, `benchmarks/`, `examples/`, `runtime-tests/`, `perf-measures/`). Imports in `__fixtures__/` and `__testfixtures__/` are not checked, because those folders hold sample input rather than code that runs.
 
 ## Usage
 

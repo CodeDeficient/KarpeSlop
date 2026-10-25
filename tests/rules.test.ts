@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { analyzeSource, findUnsafeAssertions, isFixturePath, isTestPath } from '../rules.ts';
+import { analyzeSource, findUnsafeAssertions, isFixturePath, isNonProductionPath } from '../rules.ts';
 import { checkImports, isBarePackageSpecifier, type RegistryLookup } from '../imports.ts';
 
 function typesIn(code: string, fileName = 'sample.ts'): string[] {
@@ -532,11 +532,17 @@ test('JSX text that looks like a comment is not a comment', () => {
 });
 
 test('test paths are recognized', () => {
-  assert.equal(isTestPath('src/__tests__/a.ts'), true);
-  assert.equal(isTestPath('src/a.test-d.tsx'), true);
-  assert.equal(isTestPath('src/a.spec.ts'), true);
-  assert.equal(isTestPath('src/attest.ts'), false);
-  assert.equal(isTestPath('src/v4/__testfixtures__/named.input.tsx'), true);
+  assert.equal(isNonProductionPath('src/__tests__/a.ts'), true);
+  assert.equal(isNonProductionPath('src/a.test-d.tsx'), true);
+  assert.equal(isNonProductionPath('src/a.spec.ts'), true);
+  assert.equal(isNonProductionPath('src/attest.ts'), false);
+  for (const sample of ['benchmarks/http-server/benchmark.ts', 'packages/bench/array.ts', 'examples/auth/index.js',
+    'runtime-tests/deno/hono.test.ts', 'perf-measures/bundle-check/scripts/check.ts', 'pkgs/core/examples/cdn/basic.js']) {
+    assert.equal(isNonProductionPath(sample), true, sample);
+  }
+  assert.equal(isNonProductionPath('src/example.ts'), false);
+  assert.equal(isNonProductionPath('src/benchmark.ts'), false);
+  assert.equal(isNonProductionPath('src/v4/__testfixtures__/named.input.tsx'), true);
   assert.equal(isFixturePath('src/v4/__testfixtures__/named.input.tsx'), true);
   assert.equal(isFixturePath('src/__tests__/a.test.ts'), false);
   assert.equal(isFixturePath('e2e/fixtures/auth.ts'), false);
