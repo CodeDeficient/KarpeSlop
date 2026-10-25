@@ -5,6 +5,7 @@ All notable changes will be documented in this file.
 ## [Unreleased]
 
 ### Changed
+- `placeholder_implementation` judges the body, not only the wording. Any TODO/FIXME or "for now" in a body that returns a constant counts, constants include literal arrays and objects (`return [{ id: 1 }]`), a fake delay (`await new Promise(r => setTimeout(r, 500))`) counts as trivial, a comment that says the real code is elsewhere ("Simulate API call", "In a real application you would", "Mock data", "replace with a proper ... in production") counts on any body of up to three statements, and a body that only logs and then returns success is reported. A thrown message counts only when it is just "not implemented", not when it explains why.
 - `elided_code_comment` checks block and JSX comments (`{/* ... other fields */}`), not only `//` comments, and recognizes more wordings ("Add more cases as needed", "[existing code here]", "Handle other actions similarly", "omitted for brevity"). A wording counts only when it is the whole comment, so prose that mentions "the other fields" is not reported.
 - `empty_catch` skips a catch that falls through to a fallback: the `try` block returns, and code after the `try` (or the next loop iteration) handles the failure. zod and ky use this pattern; it was reported at high severity.
 - SECURITY.md lists the npm registry requests a scan makes and how to turn them off, and gives a real contact for vulnerability reports. It used to say the tool made no network requests.
