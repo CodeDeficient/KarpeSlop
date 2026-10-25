@@ -22,7 +22,7 @@ import {
   type Severity,
   type UnsafeAssertionFinding
 } from './rules.ts';
-import { checkImports, npmRegistryLookup, NPM_REGISTRY_HEADERS, type RegistryLookup } from './imports.ts';
+import { checkImports, npmRegistryLookup, NPM_REGISTRY_HEADERS, ownVersion, type RegistryLookup } from './imports.ts';
 
 const globSync = glob.sync;
 const globEscape = glob.escape;
@@ -989,13 +989,7 @@ async function runIfMain() {
   }
 
   if (flagArgs.includes('--version') || flagArgs.includes('-v')) {
-    try {
-      const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
-      const packageData = asRecord(JSON.parse(fs.readFileSync(packagePath, 'utf8')));
-      console.log(`karpeslop/${optionalString(packageData?.version) ?? 'unknown'} ${process.platform}-${process.arch} node-${process.version}`);
-    } catch {
-      console.log('karpeslop/unknown');
-    }
+    console.log(`karpeslop/${ownVersion()} ${process.platform}-${process.arch} node-${process.version}`);
     process.exit(0);
   }
 

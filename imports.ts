@@ -439,7 +439,8 @@ function missingExportFinding(
   };
 }
 
-function ownVersion(): string {
+/** This package's version from package.json, or 'unknown'. */
+export function ownVersion(): string {
   try {
     const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
     const version: unknown = JSON.parse(fs.readFileSync(packagePath, 'utf8')).version;
