@@ -196,6 +196,7 @@ test('empty catch with an underscore binding is deliberate', () => {
   assert.equal(countOf('p.catch((_err) => {});', 'empty_catch'), 0);
   assert.equal(countOf('p.catch((err) => {});', 'empty_catch'), 1);
   assert.equal(countOf('void reader.cancel().catch(() => {});', 'empty_catch'), 0);
+  assert.equal(countOf('void (reader.cancel().catch(() => {}));', 'empty_catch'), 0);
   assert.equal(countOf('try { a(); } catch (err) {}', 'empty_catch'), 1);
 });
 
@@ -233,7 +234,9 @@ test('empty catch: a variable assigned in the try keeps its earlier value as the
     'function f(src: S) {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n  ({ x } = src);\n  [x] = [2];\n}',
     'function f(xs: number[]) {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n  return xs.map((x) => x * 2);\n}',
     'function f(xs: number[]) {\n  let x = 1;\n  try {\n    x = load();\n  } catch {}\n  for (const x of xs) use(x);\n  if (xs.length) { const x = 2; use(x); }\n  xs.forEach(() => { var x = 3; use(x); });\n}',
-    'function f() {\n  try {\n    const x = load();\n  } catch {}\n}'
+    'function f() {\n  try {\n    const x = load();\n  } catch {}\n}',
+    // A declaration after the assignment is more work the catch would hide.
+    'function f() {\n  let x = 1;\n  try {\n    x = load();\n    const y = save(x);\n  } catch {}\n  return x;\n}'
   ]) {
     assert.equal(countOf(code, 'empty_catch'), 1, code);
   }

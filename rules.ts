@@ -387,6 +387,13 @@ function skipParentheses(expr: ts.Expression): ts.Expression {
   return current;
 }
 
+/** The nearest ancestor that is not a parenthesized expression. */
+function skipParenthesesUp(node: ts.Node): ts.Node {
+  let current = node.parent;
+  while (ts.isParenthesizedExpression(current)) current = current.parent;
+  return current;
+}
+
 /** The cast directly inside this one, looking through parentheses: `(x as A) as B`. */
 function innerCast(node: AssertionNode): AssertionNode | undefined {
   const inner = skipParentheses(node.expression);
@@ -1046,8 +1053,11 @@ function isFallbackCatch(clause: ts.CatchClause): boolean {
  * a return after the try.
  */
 function assignsOnlyOuterVariables(tryStatement: ts.TryStatement): boolean {
-  // Local declarations feed the assignment: `const stats = await stat(p); isDir = stats.isDirectory();`
-  const statements = tryStatement.tryBlock.statements.filter(statement => !ts.isVariableStatement(statement));
+  // Local declarations first feed the assignment: `const stats = await stat(p); isDir = stats.isDirectory();`.
+  // One after it is work whose failure the catch would hide.
+  const all = tryStatement.tryBlock.statements;
+  const firstAssignment = all.findIndex(statement => !ts.isVariableStatement(statement));
+  const statements = firstAssignment === -1 ? [] : all.slice(firstAssignment);
   if (statements.length === 0) return false;
   const scope = enclosingFunctionOrFile(tryStatement);
   return statements.every(statement => {
@@ -1248,7 +1258,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       const handler = node.arguments[0];
       // `void p.catch(() => {})` says the result is dropped on purpose.
       if ((ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) && ts.isBlock(handler.body) &&
-        handler.body.statements.length === 0 && !ts.isVoidExpression(node.parent) &&
+        handler.body.statements.length === 0 && !ts.isVoidExpression(skipParenthesesUp(node)) &&
         commentsWithin(handler.body).length === 0 && !isIgnoredBinding(handler.parameters[0]?.name)) {
         report('empty_catch', node.expression.name);
       }
