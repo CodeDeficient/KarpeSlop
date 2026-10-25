@@ -453,6 +453,7 @@ test('default mode skips unsafe_type_assertion in test files', () => {
   );
 
   try {
+    assert.equal(result.status, 0, `Expected exit code 0 (finding excluded) but got ${result.status}. stdout:"${result.stdout}" stderr:"${result.stderr}"`);
     assert.ok(!result.stdout.includes('unsafe_type_assertion'),
       `should not report as any in test files. stdout:"${result.stdout}"`);
   } finally {
