@@ -1162,8 +1162,11 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
 }
 
 function isRestatingComment(sourceFile: ts.SourceFile, comment: CommentInfo): boolean {
+  // One word (`// Imports`, `// ZodEmail`) is a section label, and code
+  // (`// init(inst, def);`) is commented out; neither restates the next line.
+  if (comment.body.split(/\s+/).filter(token => /\w/.test(token)).length < 2 || /[;{}=]|\w\(/.test(comment.body)) return false;
   const words = splitWords(comment.body);
-  if (words.length === 0 || words.length > 6) return false;
+  if (words.length > 6) return false;
   const content = words.filter(word => !RESTATING_STOPWORDS.has(word));
   if (content.length === 0) return false;
 
