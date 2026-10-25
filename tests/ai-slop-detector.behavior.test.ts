@@ -11,6 +11,7 @@ import {
   isExcludedPath,
   isRegistryBackedLockfileEntry,
   parseVersionRange,
+  pLimit,
   shouldAnalyzePathInQuietMode,
   splitCliArgs,
 } from '../ai-slop-detector.ts';
@@ -83,6 +84,19 @@ test('parseVersionRange intentionally only handles caret and tilde', () => {
   assert.deepStrictEqual(parseVersionRange('1.x'), { actualVersion: '1.x', isRange: false });
   assert.deepStrictEqual(parseVersionRange('latest'), { actualVersion: 'latest', isRange: false });
   assert.deepStrictEqual(parseVersionRange('*'), { actualVersion: '*', isRange: false });
+});
+
+test('pLimit logs a rejected task and still returns the other results', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const results = await pLimit([
+    async () => 1,
+    async () => { throw new Error('registry exploded'); },
+    async () => 3,
+  ], 2);
+
+  assert.deepEqual(results, [1, undefined, 3]);
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0].arguments[0]), /registry exploded/);
 });
 
 test('splitCliArgs respects -- separator and prevents flag-like paths from being treated as options', () => {
