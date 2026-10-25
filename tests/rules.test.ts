@@ -487,7 +487,7 @@ test('checkImports: a default import from a module with no default export is rep
     'node_modules/cjs/index.d.ts': 'declare const lib: { pick(): void };\nexport = lib;\n',
     'node_modules/withdefault/package.json': JSON.stringify({ name: 'withdefault', types: 'index.d.ts' }),
     'node_modules/withdefault/index.d.ts': 'declare const x: number;\nexport default x;\n',
-    'src/a.ts': "import dateFns from 'esm';\nimport lib from 'cjs';\nimport x, { format } from 'withdefault';\nimport named from 'cjsnamed';\nimport local from './local';\nimport nothing from './empty';\n",
+    'src/a.ts': "import dateFns from 'esm';\nimport lib from 'cjs';\nimport x, { format } from 'withdefault';\nimport named from 'cjsnamed';\nimport local from './local';\nimport nothing from './empty';\nexport { default } from 'esm';\nimport { default as d2 } from 'withdefault';\n",
     'src/local.ts': 'export const only = 1;\n',
     'src/empty.ts': 'export {};\n'
   });
@@ -497,7 +497,8 @@ test('checkImports: a default import from a module with no default export is rep
       ['hallucinated_import', 1, "'esm' has no default export."],
       ['hallucinated_import', 3, "'format' is not exported by 'withdefault'."],
       ['hallucinated_import', 5, "'./local' has no default export."],
-      ['hallucinated_import', 6, "'./empty' has no default export."]
+      ['hallucinated_import', 6, "'./empty' has no default export."],
+      ['hallucinated_import', 7, "'esm' has no default export."]
     ]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

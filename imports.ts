@@ -382,12 +382,14 @@ export async function checkImports(
       // Modules typed as `export = something` without members expose nothing we can check.
       // An ES module with no exports (`export {}`) is still checked.
       if (exported.size === 0 && moduleSymbol.exports?.has(ts.InternalSymbolName.ExportEquals)) continue;
-      if (site.defaultImport !== undefined && !exported.has('default') && !hasSyntheticDefault(program, moduleSymbol, resolved)) {
+      const hasDefault = exported.has('default') || hasSyntheticDefault(program, moduleSymbol, resolved);
+      if (site.defaultImport !== undefined && !hasDefault) {
         findings.push(missingExportFinding(sourceFile, site.defaultImport, specifier, 'default', file));
       }
+      // `{ default as x }` and `export { default } from` name the default export too.
       for (const element of site.namedImports) {
         const imported = (element.propertyName ?? element.name).text;
-        if (imported !== 'default' && !exported.has(imported)) {
+        if (imported === 'default' ? !hasDefault : !exported.has(imported)) {
           findings.push(missingExportFinding(sourceFile, element, specifier, imported, file));
         }
       }
@@ -460,7 +462,7 @@ function missingExportFinding(
     code: isDefault
       ? `import ${element.text} from '${moduleName}'`
       : `${ts.isExportSpecifier(element) ? 'export' : 'import'} { ${imported} } from '${moduleName}'`,
-    message: isDefault ? `'${moduleName}' has no default export.` : `'${imported}' is not exported by '${moduleName}'.`,
+    message: imported === 'default' ? `'${moduleName}' has no default export.` : `'${imported}' is not exported by '${moduleName}'.`,
     fix: hintFor(moduleName, imported)
   };
 }
