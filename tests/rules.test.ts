@@ -38,6 +38,16 @@ test('placeholder: a real body with a TODO is only a TODO', () => {
   assert.deepEqual(typesIn(code), ['todo_comment']);
 });
 
+test('TODO and FIXME comments that link a tracking issue are not reported', () => {
+  for (const comment of ['// FIXME https://github.com/reduxjs/redux-devtools/issues/1097', '// TODO(#1234): drop after the migration',
+    '// TODO: remove once PROJ-88 ships', '// HACK: see issue 42']) {
+    assert.equal(countOf(`${comment}\nexport {};\n`, 'todo_comment'), 0, comment);
+  }
+  assert.equal(countOf('// TODO(alice): tidy this up\nexport {};\n', 'todo_comment'), 1);
+  assert.equal(countOf('// TODO: handle utf-8 input\nexport {};\n', 'todo_comment'), 1);
+  assert.equal(countOf('// TODO: switch to SHA-256\nexport {};\n', 'todo_comment'), 1);
+});
+
 test('placeholder: comments that merely mention "placeholder" or "stub" are not placeholders', () => {
   assert.equal(countOf("class I { get placeholder() {\n  // placeholder text for the input\n  return 'Search...';\n} }", 'placeholder_implementation'), 0);
   assert.equal(countOf('function stub() { /* stub for tests */ }', 'placeholder_implementation'), 0);
