@@ -8,6 +8,7 @@ karpeslop-bin.js
 final-test/
 thorough-test/
 ai-slop-report.json
+detector_output.txt
 CLAUDE.md
 .claude/
 .qwen/
