@@ -155,6 +155,17 @@ test('fetch with a status check, a handed-off response, or a local fetch is not 
 // Comments
 // ---------------------------------------------------------------------------
 
+test('suppression comments do not hide findings', () => {
+  const unsafeIn = (code: string) => typesIn(code).filter(type => type.startsWith('unsafe_') || type === 'non_null_assertion');
+  assert.deepEqual(unsafeIn('const a = v as any; // eslint-disable-line'), ['unsafe_type_assertion']);
+  assert.deepEqual(unsafeIn('// eslint-disable-next-line\nconst a = v as unknown as Foo;'), ['unsafe_double_type_assertion']);
+  assert.deepEqual(unsafeIn('// @ts-ignore\nconst a = v as Record<string, unknown>;'), ['unsafe_object_assertion']);
+  assert.deepEqual(unsafeIn('// @ts-expect-error\nconst a = v as Foo[];'), ['unsafe_array_assertion']);
+  assert.deepEqual(unsafeIn('// eslint-disable-next-line no-non-null-assertion\nconst a = m.get(k)!;'), ['non_null_assertion']);
+  // Cast-like text in strings and comments is not code.
+  assert.deepEqual(typesIn('const s = "x as any"; // v as any'), []);
+});
+
 test('@ts-ignore and blanket eslint-disable are reported; scoped forms are not', () => {
   assert.equal(countOf('// @ts-ignore\nconst a = 1;', 'ts_suppression'), 1);
   assert.equal(countOf('// @ts-expect-error -- wrong upstream types\nconst a = 1;', 'ts_suppression'), 0);
