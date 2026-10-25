@@ -411,6 +411,20 @@ function isInnerOfChain(node: AssertionNode): boolean {
   return isCast(parent);
 }
 
+/**
+ * A value whose runtime shape is already known, so a cast to an object or
+ * array type only narrows it: `[] as User[]`, `{} as Record<K, V>`, and
+ * `Object.keys(o) as Array<keyof typeof o>` (Object.keys is typed string[]).
+ */
+function hasKnownShape(expr: ts.Expression): boolean {
+  const inner = skipParentheses(expr);
+  if (ts.isArrayLiteralExpression(inner)) return inner.elements.length === 0;
+  if (ts.isObjectLiteralExpression(inner)) return inner.properties.length === 0;
+  return ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) &&
+    ts.isIdentifier(inner.expression.expression) && inner.expression.expression.text === 'Object' &&
+    ['keys', 'getOwnPropertyNames'].includes(inner.expression.name.text);
+}
+
 /** Classify one cast. Chained casts report the chain, plus `as any` when it ends in any. */
 function classifyCast(node: AssertionNode): CastReport[] {
   const isAny = node.type.kind === ts.SyntaxKind.AnyKeyword;
@@ -422,6 +436,7 @@ function classifyCast(node: AssertionNode): CastReport[] {
     return reports;
   }
   if (isAny) return [{ type: 'unsafe_type_assertion', form: 'as_any' }];
+  if (hasKnownShape(node.expression)) return [{ type: 'type_assertion', form: 'as_type' }];
   if (isObjectTypeNode(node.type)) return [{ type: 'unsafe_object_assertion', form: 'as_object' }];
   if (isArrayTypeNode(node.type)) return [{ type: 'unsafe_array_assertion', form: 'as_array' }];
   return [{ type: 'type_assertion', form: 'as_type' }];
