@@ -122,6 +122,10 @@ test('casts: every cast is reported, `as const` and `as unknown` are not', () =>
   assert.equal(countOf('const a = b as any;', 'any_type_usage'), 0);
 });
 
+test('casts: cast-like text in strings and comments is not code', () => {
+  assert.deepEqual(typesIn('const s = "x as any"; // v as any'), []);
+});
+
 test('casts: parenthesized chains count as chained casts, reported once', () => {
   assert.deepEqual(typesIn('const y = (x as unknown) as Foo;'), ['unsafe_double_type_assertion']);
   assert.deepEqual(typesIn('const y = x as A as B;'), ['unsafe_double_type_assertion']);
@@ -154,6 +158,27 @@ test('fetch with a status check, a handed-off response, or a local fetch is not 
 // ---------------------------------------------------------------------------
 // Comments
 // ---------------------------------------------------------------------------
+
+test('suppression comments do not hide findings', () => {
+  // The comments themselves are reported by their own rules; drop those to see what they sit next to.
+  const hidden = new Set(['blanket_eslint_disable', 'ts_suppression']);
+  const findingsNear = (code: string) => typesIn(code).filter(type => !hidden.has(type));
+  // Every cast form, plus the non-cast type rules.
+  assert.deepEqual(findingsNear('const a = v as any; // eslint-disable-line'), ['unsafe_type_assertion']);
+  assert.deepEqual(findingsNear('const a = v as any; // eslint-disable-line @typescript-eslint/no-explicit-any'), ['unsafe_type_assertion']);
+  assert.deepEqual(findingsNear('// eslint-disable-next-line\nconst a = v as unknown as Foo;'), ['unsafe_double_type_assertion']);
+  assert.deepEqual(findingsNear('// @ts-ignore\nconst a = v as Record<string, unknown>;'), ['unsafe_object_assertion']);
+  assert.deepEqual(findingsNear('// @ts-expect-error\nconst a = v as Foo[];'), ['unsafe_array_assertion']);
+  assert.deepEqual(findingsNear('// eslint-disable-next-line\nconst a = b as Foo;'), ['type_assertion']);
+  assert.deepEqual(findingsNear('// @ts-ignore\nlet c: any;'), ['any_type_usage']);
+  assert.deepEqual(findingsNear('// eslint-disable-next-line no-non-null-assertion\nconst a = m.get(k)!;'), ['non_null_assertion']);
+  // Rules that are not about types.
+  assert.deepEqual(findingsNear('try { x(); } catch {} // eslint-disable-line'), ['empty_catch']);
+  assert.deepEqual(findingsNear('console.log(x); // eslint-disable-line no-console'), ['production_console_log']);
+  // File-wide directives.
+  assert.deepEqual(findingsNear('/* eslint-disable */\nconst a = v as any;'), ['unsafe_type_assertion']);
+  assert.deepEqual(findingsNear('// @ts-nocheck\nconst a = v as any;'), ['unsafe_type_assertion']);
+});
 
 test('@ts-ignore and blanket eslint-disable are reported; scoped forms are not', () => {
   assert.equal(countOf('// @ts-ignore\nconst a = 1;', 'ts_suppression'), 1);

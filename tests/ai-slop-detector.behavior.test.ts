@@ -543,6 +543,32 @@ test('a parent directory named test does not turn the whole project into test fi
   }
 });
 
+test('suppression comments do not hide customPatterns findings', () => {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-custom-'));
+  fs.mkdirSync(path.join(projectDir, 'src'));
+  fs.writeFileSync(path.join(projectDir, '.karpesloprc.json'), JSON.stringify({
+    customPatterns: [{ id: 'legacy_api_call', pattern: 'legacyApi\\(', message: 'Use newApi instead.', severity: 'high' }]
+  }), 'utf-8');
+  fs.writeFileSync(path.join(projectDir, 'src', 'index.ts'),
+    'legacyApi(); // eslint-disable-line\n// eslint-disable-next-line\nlegacyApi();\n// @ts-ignore\nlegacyApi();\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts'), '--quiet'],
+    { encoding: 'utf-8', cwd: projectDir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+
+  try {
+    assert.equal(result.status, 1, `stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+    assert.ok(result.stdout.includes('legacy_api_call (3)'), `stdout:"${result.stdout}"`);
+    for (const line of [1, 3, 5]) {
+      assert.ok(result.stdout.includes(`src/index.ts:${line}:1`), `line ${line} should be reported. stdout:"${result.stdout}"`);
+    }
+  } finally {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
+
 test('-- separator lets paths starting with - be treated as targets, not flags', () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-dash-'));
   const fixtureFile = path.join(tmpDir, '-my-file.ts');
