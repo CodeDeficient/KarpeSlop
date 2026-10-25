@@ -82,6 +82,22 @@ test('isExcludedPath uses segment-based matching so dist anywhere in path is exc
   assert.equal(isExcludedPath('/repo/src/components/Button.tsx', rootDir), false);
 });
 
+test('isExcludedPath skips build, out and temp only at the root or next to a package.json', () => {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-output-'));
+  fs.mkdirSync(path.join(rootDir, 'packages', 'next', 'src', 'build'), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'packages', 'next', 'package.json'), '{}');
+  try {
+    assert.equal(isExcludedPath(path.join(rootDir, 'build', 'index.js'), rootDir), true);
+    assert.equal(isExcludedPath(path.join(rootDir, 'out', 'page.js'), rootDir), true);
+    assert.equal(isExcludedPath(path.join(rootDir, 'packages', 'next', 'build', 'index.js'), rootDir), true);
+    assert.equal(isExcludedPath(path.join(rootDir, 'packages', 'next', 'src', 'build', 'webpack.ts'), rootDir), false);
+    assert.equal(isExcludedPath(path.join(rootDir, 'scripts', 'temp', 'clean.ts'), rootDir), false);
+    assert.equal(isExcludedPath(path.join(rootDir, 'src', 'build.ts'), rootDir), false);
+  } finally {
+    fs.rmSync(rootDir, { recursive: true, force: true });
+  }
+});
+
 test('isExcludedPath scans hand-written types/ folders but still skips .d.ts files', () => {
   const rootDir = '/repo';
 

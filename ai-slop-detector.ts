@@ -192,7 +192,9 @@ export function exitCodeFor(issues: ReadonlyArray<Pick<AISlopIssue, 'type' | 'se
  *
  * Segment-based matching means any file under e.g. `src/dist/` is still excluded
  * because `dist` exists as a segment. Matching `dist` everywhere is the simpler,
- * reliable choice for a build-artifact filter.
+ * reliable choice for a build-artifact filter. `build`, `out` and `temp` are
+ * also common names for source folders (Next.js keeps its build pipeline in
+ * `src/build/`), so they count only at the scan root or next to a package.json.
  */
 export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRoot: boolean = false): boolean {
   const relativePath = path.relative(rootDir, filePath).replace(/\\/g, '/');
@@ -203,15 +205,17 @@ export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRo
 
   const segments = pathToMatch.split('/');
   const excludedSegment = (name: string) => segments.includes(name);
+  const base = pathToMatch === relativePath ? rootDir : '/';
+  const isOutputFolder = (segment: string, index: number) => ['build', 'out', 'temp'].includes(segment) &&
+    index < segments.length - 1 &&
+    (index === 0 || fs.existsSync(path.join(base, ...segments.slice(0, index), 'package.json')));
   return excludedSegment('generated') ||
     excludedSegment('coverage') ||
     excludedSegment('.next') ||
     excludedSegment('node_modules') ||
     excludedSegment('dist') ||
-    excludedSegment('build') ||
     excludedSegment('.git') ||
-    excludedSegment('out') ||
-    excludedSegment('temp') ||
+    segments.some(isOutputFolder) ||
     segments.some(segment => segment.startsWith('.')) ||
     /\.d\.[cm]?ts$/.test(pathToMatch);
 }
@@ -507,8 +511,8 @@ class AISlopDetector {
       '**/*.d.mts',
       '**/*.d.cts',
       '**/coverage/**',
-      '**/out/**',
-      '**/temp/**',
+      'out/**',
+      'temp/**',
       ...this.customIgnorePaths
     ];
   }
