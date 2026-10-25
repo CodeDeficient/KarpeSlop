@@ -280,6 +280,8 @@ class ResolutionIndex {
 interface ImportSite {
   specifier: ts.StringLiteralLike;
   namedImports: ts.ImportSpecifier[];
+  /** `x` in `import x from 'mod'`. */
+  defaultImport?: ts.Identifier;
 }
 
 function collectImportSites(sourceFile: ts.SourceFile): ImportSite[] {
@@ -289,7 +291,8 @@ function collectImportSites(sourceFile: ts.SourceFile): ImportSite[] {
       const bindings = node.importClause?.namedBindings;
       sites.push({
         specifier: node.moduleSpecifier,
-        namedImports: bindings !== undefined && ts.isNamedImports(bindings) ? [...bindings.elements] : []
+        namedImports: bindings !== undefined && ts.isNamedImports(bindings) ? [...bindings.elements] : [],
+        defaultImport: node.importClause?.name
       });
     } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) {
       sites.push({ specifier: node.moduleSpecifier, namedImports: [] });
@@ -351,7 +354,7 @@ export async function checkImports(
         }
       }
 
-      if (site.namedImports.length === 0) continue;
+      if (site.namedImports.length === 0 && site.defaultImport === undefined) continue;
 
       // Only check modules whose exports are declared in TypeScript. Exports
       // inferred from plain JS, or behind an `export *` that does not resolve,
@@ -373,6 +376,9 @@ export async function checkImports(
       const exported = new Set(checker.getExportsOfModule(moduleSymbol).map(symbol => symbol.name));
       // Modules typed as `export = something` without members expose nothing we can check.
       if (exported.size === 0) continue;
+      if (site.defaultImport !== undefined && !exported.has('default') && !hasSyntheticDefault(program, moduleSymbol, resolved)) {
+        findings.push(missingExportFinding(sourceFile, site.defaultImport, specifier, 'default', file));
+      }
       for (const element of site.namedImports) {
         const imported = (element.propertyName ?? element.name).text;
         if (imported !== 'default' && !exported.has(imported)) {
@@ -395,6 +401,17 @@ export async function checkImports(
   }
 
   return findings;
+}
+
+/**
+ * CommonJS modules get a synthesized default import (esModuleInterop), the
+ * way TypeScript allows it: an `export =` module, or a declaration file that
+ * is not in ES module format. ES modules without a default export have none.
+ */
+function hasSyntheticDefault(program: ts.Program, moduleSymbol: ts.Symbol, resolved: ts.ResolvedModuleFull | undefined): boolean {
+  if (moduleSymbol.exports?.has(ts.InternalSymbolName.ExportEquals)) return true;
+  const target = resolved === undefined ? undefined : program.getSourceFile(resolved.resolvedFileName);
+  return target !== undefined && target.isDeclarationFile && target.impliedNodeFormat !== ts.ModuleKind.ESNext;
 }
 
 const TYPED_EXTENSIONS = new Set<string>([
@@ -422,19 +439,20 @@ function hasUnresolvedStarExport(program: ts.Program, options: ts.CompilerOption
 
 function missingExportFinding(
   sourceFile: ts.SourceFile,
-  element: ts.ImportSpecifier,
+  element: ts.ImportSpecifier | ts.Identifier,
   moduleName: string,
   imported: string,
   file: string
 ): ImportFinding {
   const position = sourceFile.getLineAndCharacterOfPosition(element.getStart(sourceFile));
+  const isDefault = ts.isIdentifier(element);
   return {
     type: 'hallucinated_import',
     file,
     line: position.line + 1,
     column: position.character + 1,
-    code: `import { ${imported} } from '${moduleName}'`,
-    message: `'${imported}' is not exported by '${moduleName}'.`,
+    code: isDefault ? `import ${element.text} from '${moduleName}'` : `import { ${imported} } from '${moduleName}'`,
+    message: isDefault ? `'${moduleName}' has no default export.` : `'${imported}' is not exported by '${moduleName}'.`,
     fix: hintFor(moduleName, imported)
   };
 }
