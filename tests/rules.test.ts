@@ -140,6 +140,24 @@ test('empty catch with nothing after it, or a try that does not return, is repor
   assert.equal(countOf('function f() {\n  const g = () => { try { return load(); } catch {} };\n  return g;\n}', 'empty_catch'), 1);
 });
 
+test('swallowed error: a catch that only logs is reported', () => {
+  assert.equal(countOf('async function f() {\n  try { await save(); } catch (err) {\n    console.error("Failed to save", err);\n  }\n}', 'swallowed_error'), 1);
+  assert.equal(countOf('try { a(); } catch (e) { console.log(e); console.warn("again"); }', 'swallowed_error'), 1);
+});
+
+test('swallowed error: rethrowing, reporting, returning or commenting is not swallowing', () => {
+  for (const code of [
+    'try { a(); } catch (e) { console.error(e); throw e; }',
+    'try { a(); } catch (e) { console.error(e); setError(e); }',
+    'function f() { try { return a(); } catch { return null; } }',
+    'function f(s: string) {\n  try { return JSON.parse(s); } catch (e) { console.warn(e); }\n  return {};\n}',
+    'try { a(); } catch (e) {\n  // Analytics is best effort; never block the page on it.\n  console.warn(e);\n}',
+    'p.catch(err => console.error(err));'
+  ]) {
+    assert.equal(countOf(code, 'swallowed_error'), 0, code);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // placeholder_value
 // ---------------------------------------------------------------------------

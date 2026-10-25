@@ -88,6 +88,14 @@ export const RULES: readonly RuleInfo[] = [
     skipTests: true
   },
   {
+    id: 'swallowed_error',
+    severity: 'medium',
+    message: 'Error is caught, logged and then discarded.',
+    why: 'Execution continues as if the operation succeeded, so callers and users never learn it failed. Rethrow, return a result the caller checks, or say in a comment why continuing is safe.',
+    learnMore: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch',
+    skipTests: true
+  },
+  {
     id: 'unsafe_type_assertion',
     severity: 'high',
     message: "Value is cast to 'any'.",
@@ -895,6 +903,14 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     if (ts.isCatchClause(node) && node.block.statements.length === 0 &&
       commentsWithin(node.block).length === 0 && !isFallbackCatch(node)) {
       report('empty_catch', node);
+    }
+
+    // catch (error) { console.error('Failed', error); } and nothing else
+    if (ts.isCatchClause(node) && node.block.statements.length > 0 &&
+      node.block.statements.every(statement => ts.isExpressionStatement(statement) &&
+        ts.isCallExpression(statement.expression) && isConsoleCall(statement.expression, /^(log|debug|info|warn|error|trace)$/)) &&
+      commentsWithin(node.block).length === 0 && !isFallbackCatch(node)) {
+      report('swallowed_error', node);
     }
 
     // promise.catch(() => {})
