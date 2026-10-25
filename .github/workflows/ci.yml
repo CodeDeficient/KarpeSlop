@@ -22,3 +22,16 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Build and run the packaged CLI
+        run: |
+          npm pack
+          mkdir -p /tmp/smoke && cd /tmp/smoke && npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/karpeslop-*.tgz
+          echo 'export const v = 1 as any;' > a.ts
+          # `as any` is high severity, so a working CLI reports it and exits 1.
+          # A crash also exits 1, so check the finding is in the output too.
+          status=0
+          KARPESLOP_OFFLINE=1 npx karpeslop --no-report a.ts > out.txt 2>&1 || status=$?
+          cat out.txt
+          test "$status" -eq 1
+          grep -q 'unsafe_type_assertion' out.txt

@@ -1111,7 +1111,8 @@ turn it off, with severityOverrides in .karpesloprc.json.
 `);
 }
 
-async function runIfMain() {
+/** The command-line entry point, used by karpeslop-cli.js and by `tsx ai-slop-detector.ts`. */
+export async function main(): Promise<void> {
   const rootDir = process.cwd();
 
   const args = process.argv.slice(2);
@@ -1181,7 +1182,7 @@ async function runIfMain() {
 
 // Execute only when run as the main module, not when imported by tests.
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
-  runIfMain().catch(error => {
+  main().catch(error => {
     console.error('KarpeSlop failed:', error);
     process.exit(1);
   });

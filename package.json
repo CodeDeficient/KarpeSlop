@@ -8,6 +8,8 @@
     "karpeslop": "karpeslop-cli.js"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc -p .",
     "slop": "tsx ai-slop-detector.ts",
@@ -15,9 +17,9 @@
     "slop:report": "tsx ai-slop-detector.ts && cat ai-slop-report.json"
   },
   "files": [
-    "ai-slop-detector.ts",
-    "rules.ts",
-    "imports.ts",
+    "dist/ai-slop-detector.js",
+    "dist/rules.js",
+    "dist/imports.js",
     "karpeslop-cli.js",
     "README.md",
     "CHANGELOG.md",
@@ -51,7 +53,6 @@
   "llmsFull": "KarpeSlop is a static analysis tool for TypeScript and JavaScript. Syntax rules run on the TypeScript AST; import checks use real module resolution against installed type declarations, package.json files and the npm registry. It reports findings by rule with severity (critical, high, medium, low), why each matters, and a fix only when the fix is certain. Run with: npx karpeslop@latest. Exits 1 on high or critical findings (--fail-on=medium to include medium). Use --strict in CI to exit 2 on critical findings (wrong imports, nonexistent packages). Writes ai-slop-report.json.",
   "dependencies": {
     "glob": "13.0.6",
-    "tsx": "4.22.4",
     "typescript": "6.0.3"
   },
   "repository": {
@@ -59,6 +60,7 @@
     "url": "git+https://github.com/CodeDeficient/karpeslop.git"
   },
   "devDependencies": {
-    "@types/node": "25.9.2"
+    "@types/node": "25.9.2",
+    "tsx": "4.22.4"
   }
 }
