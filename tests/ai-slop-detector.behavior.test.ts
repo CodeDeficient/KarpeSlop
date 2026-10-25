@@ -643,6 +643,7 @@ test('the report path comes from --report=<path>, and --no-report writes none', 
   assert.equal(reportPathFrom(['--report=out/k.json'], '/repo'), path.resolve('/repo', 'out/k.json'));
   assert.equal(reportPathFrom(['--report=a.json', '--no-report'], '/repo'), undefined);
   assert.throws(() => reportPathFrom(['--report='], '/repo'), /--report needs a file path/);
+  assert.throws(() => reportPathFrom(['--report=', '--no-report'], '/repo'), /--report needs a file path/);
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-report-'));
   fs.writeFileSync(path.join(projectDir, 'index.ts'), 'export const a = 1;\n', 'utf-8');
   const run = (...flags: string[]) => spawnSync(

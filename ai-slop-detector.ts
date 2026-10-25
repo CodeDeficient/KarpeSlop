@@ -279,10 +279,10 @@ export function unknownFlags(flagArgs: readonly string[]): string[] {
 
 /** Where to write the JSON report: `--report=<path>`, nowhere with `--no-report`, else ./ai-slop-report.json. */
 export function reportPathFrom(flagArgs: readonly string[], rootDir: string): string | undefined {
-  if (flagArgs.includes('--no-report')) return undefined;
   const flag = flagArgs.filter(arg => arg.startsWith('--report=')).at(-1);
   const value = flag?.slice('--report='.length);
   if (value === '') throw new UsageError('--report needs a file path, e.g. --report=reports/karpeslop.json');
+  if (flagArgs.includes('--no-report')) return undefined;
   return path.resolve(rootDir, value ?? 'ai-slop-report.json');
 }
 
