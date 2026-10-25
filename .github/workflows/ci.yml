@@ -22,3 +22,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Build and run the packaged CLI
+        run: |
+          npm pack
+          mkdir -p /tmp/smoke && cd /tmp/smoke && npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/karpeslop-*.tgz
+          echo 'export const v = 1 as any;' > a.ts
+          # `as any` is high severity, so a working CLI exits 1.
+          status=0
+          KARPESLOP_OFFLINE=1 npx karpeslop --no-report a.ts || status=$?
+          test "$status" -eq 1

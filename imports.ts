@@ -636,15 +636,14 @@ function missingExportFinding(
   };
 }
 
-/** This package's version from package.json, or 'unknown'. */
+/** This package's version from package.json (next to this file, or one level up from dist/), or 'unknown'. */
 export function ownVersion(): string {
-  try {
-    const packagePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
-    const version: unknown = JSON.parse(fs.readFileSync(packagePath, 'utf8')).version;
-    return typeof version === 'string' ? version : 'unknown';
-  } catch {
-    return 'unknown';
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  for (const dir of [here, path.dirname(here)]) {
+    const version = readJsonObject(path.join(dir, 'package.json'))?.version;
+    if (typeof version === 'string') return version;
   }
+  return 'unknown';
 }
 
 /** Sent with every npm registry request, as the registry asks of programmatic clients. */
