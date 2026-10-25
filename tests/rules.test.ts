@@ -612,6 +612,59 @@ test('checkImports: a default import from a module with no default export is rep
   }
 });
 
+test('checkImports: a relative or tsconfig-alias import of a file that does not exist is reported', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app' }),
+    'tsconfig.json': JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } } }),
+    'src/lib/format.ts': 'export const formatPrice = (c: number) => String(c);\n',
+    'src/styles.css': '',
+    'src/Widget.vue': '',
+    'src/session.test.ts': '',
+    'src/a.ts': [
+      "import { validate } from '../lib/validation';",
+      "import { formatPrice } from '@/lib/formatting';",
+      "import legacy from './legacy-widget';",
+      "import { formatPrice as ok } from '@/lib/format';",
+      "import './styles.css';",
+      "import Widget from './Widget.vue';",
+      "import raw from './styles.css?raw';",
+      "import { x } from './lib/format.js';",
+      "import { app } from '../dist/index.js';",
+      "import type { PageLoad } from './$types';",
+      "import { source } from '@/.source';",
+      "import { client } from './generated/client';",
+      "import { session } from './session';",
+      ''
+    ].join('\n')
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/a.ts')], dir, registry);
+    assert.deepEqual(findings.map(f => [f.type, f.line, f.message]), [
+      ['hallucinated_import', 1, "'../lib/validation' does not resolve to a file."],
+      ['hallucinated_import', 2, "'@/lib/formatting' does not resolve to a file."],
+      ['hallucinated_import', 3, "'./legacy-widget' does not resolve to a file."],
+      ['hallucinated_import', 8, "'x' is not exported by './lib/format.js'."],
+      ['hallucinated_import', 13, "'./session' does not resolve to a file."]
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkImports: a catch-all paths key does not turn missing packages into missing files', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app' }),
+    'tsconfig.json': JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '*': ['./src/*'] } } }),
+    'src/a.ts': "import pad from 'left-padx-utils-ai';\n"
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/a.ts')], dir, registry);
+    assert.deepEqual(findings.map(f => f.type), ['nonexistent_package']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: names re-exported with export { } from are checked', async () => {
   const dir = makeProject({
     ...fakeReact,
@@ -716,6 +769,7 @@ test('checkImports: aliases from a nested tsconfig or a bundler config are not p
     'packages/web/package.json': JSON.stringify({ name: 'web' }),
     'packages/web/tsconfig.json': JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@lib/*': ['src/lib/*'] } } }),
     'packages/web/src/a.ts': "import { x } from '@lib/util';\nimport { y } from '@components/Button';\n",
+    'packages/web/src/lib/util.ts': 'export const x = 1;\n',
     'packages/web/vite.config.ts': "export default { resolve: { alias: { '@components': '/src/components' } } };\n"
   });
   try {
@@ -732,7 +786,8 @@ test('checkImports: paths from a solution-style tsconfig\'s references are honor
     'package.json': JSON.stringify({ name: 'app' }),
     'tsconfig.json': JSON.stringify({ files: [], references: [{ path: './tsconfig.app.json' }] }),
     'tsconfig.app.json': JSON.stringify({ compilerOptions: { composite: true, paths: { '@ui/*': ['./ui/*'] } }, include: ['src'] }),
-    'src/a.ts': "import { Button } from '@ui/button';\n"
+    'src/a.ts': "import { Button } from '@ui/button';\n",
+    'ui/button.ts': 'export const Button = 1;\n'
   });
   try {
     assert.deepEqual(await checkImports([path.join(dir, 'src/a.ts')], dir, registry), []);
