@@ -359,8 +359,9 @@ class AISlopDetector {
     }
   }
 
-  private severityOf(ruleId: string, fallback: Severity): Severity | 'off' {
-    return this.severityOverrides.get(ruleId) ?? getRule(ruleId)?.severity ?? fallback;
+  /** The configured override for a rule, else the severity of the rule or custom pattern that produced it. */
+  private severityOf(ruleId: string, defaultSeverity: Severity): Severity | 'off' {
+    return this.severityOverrides.get(ruleId) ?? defaultSeverity;
   }
 
   /**
@@ -517,8 +518,8 @@ class AISlopDetector {
     return [...new Set(resolved)];
   }
 
-  private record(issue: Omit<AISlopIssue, 'severity'>, fallbackSeverity: Severity): void {
-    const severity = this.severityOf(issue.type, fallbackSeverity);
+  private record(issue: Omit<AISlopIssue, 'severity'>, defaultSeverity: Severity): void {
+    const severity = this.severityOf(issue.type, defaultSeverity);
     if (severity === 'off') return;
     this.issues.push({ ...issue, severity });
   }
@@ -537,7 +538,8 @@ class AISlopDetector {
     if (quiet && isTestFile) return;
     const isCliFile = isCliPath(path.relative(this.rootDir, filePath), content);
 
-    this.lineCounts.set(filePath, content.split('\n').length);
+    // A trailing newline ends the last line; it does not start another one.
+    this.lineCounts.set(filePath, content === '' ? 0 : content.split('\n').length - (content.endsWith('\n') ? 1 : 0));
 
     for (const finding of analyzeSource(content, filePath)) {
       const rule = getRule(finding.type);

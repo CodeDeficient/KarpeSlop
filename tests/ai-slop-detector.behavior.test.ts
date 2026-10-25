@@ -126,7 +126,9 @@ test('--strict exits with code 2 when critical hallucination is found', () => {
 });
 
 test('severityOverrides with "off" silences unsafe_double_type_assertion without crashing', () => {
-  const fixtureFile = path.resolve(process.cwd(), 'tests/fixtures/temp-off-fixture.ts');
+  // Written outside tests/ so the finding is not dropped as a test file before the override applies.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-off-'));
+  const fixtureFile = path.join(tmpDir, 'off-fixture.ts');
   const configFile = path.resolve(process.cwd(), '.karpesloprc.json');
   const savedConfig = fs.readFileSync(configFile, 'utf-8');
 
@@ -147,6 +149,7 @@ test('severityOverrides with "off" silences unsafe_double_type_assertion without
     assert.ok(!result.stdout.includes('unsafe_double'), 'should not mention the suppressed pattern');
   } finally {
     fs.unlinkSync(fixtureFile);
+    fs.rmdirSync(tmpDir);
     fs.writeFileSync(configFile, savedConfig, 'utf-8');
   }
 });
