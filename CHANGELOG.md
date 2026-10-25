@@ -17,6 +17,7 @@ Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript 
 - **Exit codes:** exit 1 now means a finding at medium severity or above. Low-severity findings are informational.
 - **Score removed.** The "Karpathy Slop Index" point total grew with repo size and wasn't comparable between projects. The summary now reports findings by severity and per 1,000 lines.
 - **`--quiet`** now includes `src/` and always skips test files.
+- **Folders named `types` are scanned.** Only `.d.ts` files are skipped as declarations. Generated `.ts` type files (Supabase, GraphQL codegen) under `types/` now get findings; add their path to `ignorePaths` to skip them.
 
 ### Added
 - `hallucinated_import`: named imports checked against the module's real exports via the TypeScript checker, including multi-line and aliased imports. Falls back to a list of well-known mix-ups when types aren't installed, and suggests where the symbol really lives.
