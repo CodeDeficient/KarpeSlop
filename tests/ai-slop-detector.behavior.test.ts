@@ -486,10 +486,13 @@ test('default mode skips unsafe_type_assertion in test files', () => {
   const result = spawnSync(
     process.execPath,
     ['--import', 'tsx', path.resolve(process.cwd(), 'ai-slop-detector.ts'), fixtureFile],
-    { encoding: 'utf-8', cwd: process.cwd() }
+    { encoding: 'utf-8', cwd: process.cwd(), env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
   );
 
   try {
+    assert.equal(result.status, 0, `Expected exit code 0 (finding excluded) but got ${result.status}. stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+    // Exit 0 with no findings is also what an unscanned file gives; prove it was scanned.
+    assert.ok(result.stdout.includes('Scanned 1 file'), `the test file should still be scanned. stdout:"${result.stdout}"`);
     assert.ok(!result.stdout.includes('unsafe_type_assertion'),
       `should not report as any in test files. stdout:"${result.stdout}"`);
   } finally {
