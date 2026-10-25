@@ -514,7 +514,7 @@ const ELIDED_COMMENT = new RegExp([
   String.raw`^(etc\.?|and\s+so\s+on\.?)$`
 ].join('|'), 'i');
 
-const HEDGING_COMMENT = /\b(should\s+(hopefully\s+)?work|hopefully|might\s+work|(might|may)\s+not\s+work|seems\s+to\s+work|should\s+(handle|cover)\s+(most|all|any)\b|not\s+(100%\s+)?sure\s+(if|why|whether|this|that|how)|i\s+think|i\s+believe|fingers\s+crossed|for\s+some\s+reason)\b/i;
+const HEDGING_COMMENT = /\b(should\s+(hopefully\s+)?work|hopefully|might\s+work|(might|may)\s+not\s+work|seems\s+to\s+work|should\s+(handle|cover)\s+(most|all|any)\s+(of\s+the\s+)?(edge\s+)?(cases|inputs|scenarios|situations)\b|not\s+(100%\s+)?sure\s+(if|why|whether|this|that|how)|i\s+think|i\s+believe|fingers\s+crossed|for\s+some\s+reason)\b/i;
 
 const TODO_COMMENT = /^\W*(TODO|FIXME|HACK|XXX)\b/;
 

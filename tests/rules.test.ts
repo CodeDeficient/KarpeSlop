@@ -387,6 +387,7 @@ test('hedging is narrow: "should work" yes, "probably" and "just" no', () => {
     assert.equal(countOf(`${comment}\nexport {};`, 'hedging_comment'), 1, comment);
   }
   assert.equal(countOf('// The parser should handle CRLF line endings\nexport {};', 'hedging_comment'), 0);
+  assert.equal(countOf('// The parser should handle all CRLF line endings\nexport {};', 'hedging_comment'), 0);
   assert.equal(countOf('// hopefully UTF-8 decoding works here\nexport {};', 'hedging_comment'), 1);
   assert.equal(countOf('// NOTE: Solid renders twice for some reason without this; see solidjs/solid#1234\nexport {};', 'hedging_comment'), 0);
 });
