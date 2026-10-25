@@ -5,6 +5,7 @@ All notable changes will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `--report=<path>` writes the JSON report somewhere other than `./ai-slop-report.json`, and `--no-report` skips it, so a scan no longer has to leave a file in the working tree.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed

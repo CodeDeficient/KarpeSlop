@@ -16,6 +16,7 @@ import {
   isRegistryBackedLockfileEntry,
   parseVersionRange,
   pLimit,
+  reportPathFrom,
   shouldAnalyzePathInQuietMode,
   splitCliArgs,
   uniqueRealFiles,
@@ -635,6 +636,29 @@ test('a path that cannot be scanned gives a one-line error, not a stack trace', 
   assert.match(result.stderr, /Target path does not exist, skipping: .*does-not-exist\.ts/);
   assert.match(result.stderr, /KarpeSlop: None of the given paths is a file KarpeSlop can scan/);
   assert.equal(/\n\s+at /.test(result.stderr), false, result.stderr);
+});
+
+test('the report path comes from --report=<path>, and --no-report writes none', () => {
+  assert.equal(reportPathFrom([], '/repo'), path.resolve('/repo', 'ai-slop-report.json'));
+  assert.equal(reportPathFrom(['--report=out/k.json'], '/repo'), path.resolve('/repo', 'out/k.json'));
+  assert.equal(reportPathFrom(['--report=a.json', '--no-report'], '/repo'), undefined);
+  assert.throws(() => reportPathFrom(['--report='], '/repo'), /--report needs a file path/);
+  assert.throws(() => reportPathFrom(['--report=', '--no-report'], '/repo'), /--report needs a file path/);
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-report-'));
+  fs.writeFileSync(path.join(projectDir, 'index.ts'), 'export const a = 1;\n', 'utf-8');
+  const run = (...flags: string[]) => spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts'), ...flags],
+    { encoding: 'utf-8', cwd: projectDir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+  try {
+    assert.equal(run('--no-report').status, 0);
+    assert.equal(fs.existsSync(path.join(projectDir, 'ai-slop-report.json')), false);
+    assert.equal(run('--report=reports/karpeslop.json').status, 0);
+    assert.equal(fs.existsSync(path.join(projectDir, 'reports', 'karpeslop.json')), true);
+  } finally {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
 });
 
 test('unknown flags are rejected instead of silently ignored', () => {
