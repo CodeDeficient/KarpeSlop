@@ -210,6 +210,26 @@ export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRo
     /\.d\.[cm]?ts$/.test(pathToMatch);
 }
 
+/**
+ * One entry per real file. A symlinked copy (a monorepo package linking the
+ * root lint config) would otherwise be scanned and reported once per link.
+ * The path that is not a link is kept when both are present.
+ */
+export function uniqueRealFiles(files: readonly string[]): string[] {
+  const byRealPath = new Map<string, string>();
+  for (const file of files) {
+    let real: string;
+    try {
+      real = fs.realpathSync(file);
+    } catch {
+      real = path.resolve(file);
+    }
+    const kept = byRealPath.get(real);
+    if (kept === undefined || (path.resolve(kept) !== real && path.resolve(file) === real)) byRealPath.set(real, file);
+  }
+  return [...byRealPath.values()];
+}
+
 function isCliPath(filePath: string, content: string): boolean {
   if (content.startsWith('#!')) return true;
   const normalized = filePath.replace(/\\/g, '/');
@@ -497,7 +517,7 @@ class AISlopDetector {
    * Find all TypeScript/JavaScript files in the project, plus manifest files
    */
   private findAllFiles(): string[] {
-    return [...new Set(this.findCodeAndManifests(this.rootDir, false))];
+    return uniqueRealFiles(this.findCodeAndManifests(this.rootDir, false));
   }
 
   /**
@@ -533,7 +553,7 @@ class AISlopDetector {
       }
     }
 
-    return [...new Set(resolved)];
+    return uniqueRealFiles(resolved);
   }
 
   private record(issue: Omit<AISlopIssue, 'severity'>, defaultSeverity: Severity): void {
