@@ -510,12 +510,12 @@ const ELIDED_COMMENT = new RegExp([
   String.raw`^(etc\.?|and\s+so\s+on\.?)$`
 ].join('|'), 'i');
 
-const HEDGING_COMMENT = /\b(should\s+(hopefully\s+)?work|hopefully|might\s+work|not\s+sure\s+(if|why|whether|this|that|how)|i\s+think|i\s+believe|fingers\s+crossed|for\s+some\s+reason)\b/i;
+const HEDGING_COMMENT = /\b(should\s+(hopefully\s+)?work|hopefully|might\s+work|(might|may)\s+not\s+work|seems\s+to\s+work|should\s+(handle|cover)\s+(most|all|any)\b|not\s+(100%\s+)?sure\s+(if|why|whether|this|that|how)|i\s+think|i\s+believe|fingers\s+crossed|for\s+some\s+reason)\b/i;
 
 const TODO_COMMENT = /^\W*(TODO|FIXME|HACK|XXX)\b/;
 
-/** Points at a tracking issue: a URL, `#123`, `JIRA-123` or "issue 123". */
-const TRACKED_REFERENCE = /https?:\/\/|(^|[\s(])#\d+\b|\b(?!(UTF|SHA|ES|ISO|RFC|AES|RSA|HMAC|MD|TLS|SSL|HTTP|IPV|ECMA|PEP|UTC|GMT|BASE)-)[A-Z][A-Z0-9]+-\d+\b|\b([Ii]ssue|[Tt]icket|[Bb]ug)\s+#?\d+/;
+/** Points at a tracking issue: a URL, `#123`, `owner/repo#123`, `JIRA-123` or "issue 123". */
+const TRACKED_REFERENCE = /https?:\/\/|(^|[\s(]|[\w.-]+\/[\w.-]+)#\d+\b|\b(?!(UTF|SHA|ES|ISO|RFC|AES|RSA|HMAC|MD|TLS|SSL|HTTP|IPV|ECMA|PEP|UTC|GMT|BASE)-)[A-Z][A-Z0-9]+-\d+\b|\b([Ii]ssue|[Tt]icket|[Bb]ug)\s+#?\d+/;
 
 const TS_SUPPRESSION = /^\s*@ts-(ignore|nocheck)\b/;
 
@@ -1104,7 +1104,8 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       reportComment('todo_comment', comment);
       continue;
     }
-    if (HEDGING_COMMENT.test(body)) {
+    // A hedge that links the issue it is about is documented, not unverified.
+    if (HEDGING_COMMENT.test(body) && !TRACKED_REFERENCE.test(body)) {
       reportComment('hedging_comment', comment);
       continue;
     }
