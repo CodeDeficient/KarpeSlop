@@ -48,6 +48,19 @@ test('TODO and FIXME comments that link a tracking issue are not reported', () =
   assert.equal(countOf('// TODO: switch to SHA-256\nexport {};\n', 'todo_comment'), 1);
 });
 
+test('placeholder: "in a production environment, you would" over a short body is reported', () => {
+  for (const comment of ['In a production environment, you would upload to S3 here', "In production you'd call the payments API", 'In a production app, this would hit the database',
+    'In production, you will need to replace this with a real DB', 'In production, this should be replaced with a real database']) {
+    const code = `class S {\n  async upload(key: string) {\n    // ${comment}\n    return \`https://bucket.s3.amazonaws.com/\${key}\`;\n  }\n}\n`;
+    assert.equal(countOf(code, 'placeholder_implementation'), 1, comment);
+  }
+  assert.equal(countOf('function f(x: number) {\n  // Production builds strip this check, so keep it cheap.\n  return check(x);\n}', 'placeholder_implementation'), 0);
+  // Saying how production behaves is not saying the code is a stand-in.
+  assert.equal(countOf('function cdn(p: string) {\n  // In production, this will be served from the CDN.\n  return base + p;\n}', 'placeholder_implementation'), 0);
+  assert.equal(countOf('function f() {\n  // In production, it should stay under 100ms.\n  return run();\n}', 'placeholder_implementation'), 0);
+  assert.equal(countOf('function unescape(s: string) {\n  // Escape sequences are replaced with the actual characters.\n  return s.replace(re, fn);\n}', 'placeholder_implementation'), 0);
+});
+
 test('placeholder: comments that merely mention "placeholder" or "stub" are not placeholders', () => {
   assert.equal(countOf("class I { get placeholder() {\n  // placeholder text for the input\n  return 'Search...';\n} }", 'placeholder_implementation'), 0);
   assert.equal(countOf('function stub() { /* stub for tests */ }', 'placeholder_implementation'), 0);

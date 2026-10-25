@@ -488,8 +488,9 @@ const PLACEHOLDER_COMMENT = new RegExp([
  */
 const STAND_IN_COMMENT = new RegExp([
   String.raw`\bin\s+a\s+real\s+(app|application|implementation|project|world|scenario|system|environment)\b`,
-  String.raw`\bin\s+production,?\s+(you|we|this|it)\s+(would|should|will)\b`,
+  String.raw`\bin\s+(a\s+)?production(\s+(environment|app|application|build|system|setting|deployment))?,?\s+((you|we|this|it)('d|\s+would)|(you|we)('ll|\s+(should|will)))\b`,
   String.raw`\breplace\s+(this\s+)?with\s+(a\s+|an\s+|the\s+)?(real|actual|proper)\b`,
+  String.raw`\b(this|it)\s+(should|will|must|needs\s+to)\s+be\s+replaced\s+with\s+(a\s+|an\s+|the\s+)?(real|actual|proper)\b`,
   String.raw`\breplace\s+with\s+.{1,40}\b(later|in\s+production)\b`,
   String.raw`\b(simulate|simulates|simulated|simulating)\s+(an?\s+|the\s+)?(api|network|http|server|request|call|response|delay|latency|fetch|database|db)\b`,
   String.raw`\b(fake|mock|mocked|dummy|hard-?coded)\s+(data|response|result|value|values|coordinates|implementation|user|users)\b`,
