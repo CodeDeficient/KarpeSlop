@@ -673,7 +673,9 @@ test('finding density counts application code only', async t => {
   try {
     fs.writeFileSync(path.join(dir, 'app.ts'), 'export const a = 1;\n// TODO tidy\nexport const b = 2;\n');
     fs.mkdirSync(path.join(dir, '__tests__'));
-    fs.writeFileSync(path.join(dir, '__tests__', 'a.test.ts'), Array.from({ length: 97 }, (_, i) => `export const t${i} = ${i};`).join('\n') + '\n');
+    // A finding in the test file, which must not count toward application density.
+    fs.writeFileSync(path.join(dir, '__tests__', 'a.test.ts'), '// @ts-ignore\n' +
+      Array.from({ length: 96 }, (_, i) => `export const t${i} = ${i};`).join('\n') + '\n');
     const log = t.mock.method(console, 'log', () => {});
     const detector = new AISlopDetector(dir, undefined, async () => 'unknown');
     await detector.detect();
@@ -684,6 +686,7 @@ test('finding density counts application code only', async t => {
     const parsed = JSON.parse(fs.readFileSync(report, 'utf8'));
     assert.equal(parsed.linesScanned, 100);
     assert.equal(parsed.applicationLinesScanned, 3);
+    assert.ok(parsed.issues.some((issue: { file: string }) => issue.file.includes('a.test.ts')));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
