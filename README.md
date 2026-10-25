@@ -22,7 +22,7 @@ npx karpeslop@latest
 
 | Rule | Severity | What it finds |
 | --- | --- | --- |
-| `hallucinated_import` | critical | A named import the module doesn't export (`import { useRouter } from 'react'`), including multi-line and aliased imports, a default import from an ES module with no default export, and a subpath an installed package does not have (`lodash-es/debounceAsync`) |
+| `hallucinated_import` | critical | A named import the module doesn't export (`import { useRouter } from 'react'`), including multi-line and aliased imports, a default import from an ES module with no default export, a subpath an installed package does not have (`lodash-es/debounceAsync`), and a relative or tsconfig-alias import of a file that does not exist (`../lib/validation`, `@/lib/formatting`). Paths into build output or generated code (`dist/`, `generated/`, dot-folders, SvelteKit `$types`) are not checked |
 | `nonexistent_package` | critical | An imported package that isn't on the npm registry |
 | `undeclared_dependency` | high | An imported package that isn't in any `package.json` and isn't installed |
 | `placeholder_implementation` | high | A body that returns a constant (or nothing) under a TODO or placeholder comment; a short body under a comment that says the real code is elsewhere ("Simulate API call", "In a real app you would..."); a body that only logs and returns success; or `throw new Error("Not implemented")` |

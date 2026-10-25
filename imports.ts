@@ -317,6 +317,56 @@ class ResolutionIndex {
   }
 }
 
+/**
+ * Build output and generated code that is often absent from a checkout:
+ * `../dist/index.js`, `./generated/client`, `@/.source`, SvelteKit's `./$types`.
+ */
+function isGeneratedSegment(segment: string): boolean {
+  return ['dist', 'build', 'out', 'generated', '__generated__'].includes(segment) || segment.startsWith('$') ||
+    (segment.startsWith('.') && segment !== '.' && segment !== '..');
+}
+
+/**
+ * The paths a relative or tsconfig `paths` specifier can point at, or
+ * undefined when the specifier is neither (a package, a bundler alias).
+ */
+function localTargets(specifier: string, fileDir: string, options: ts.CompilerOptions): string[] | undefined {
+  const bare = specifier.replace(/[?#].*$/, '');
+  if (bare.includes(':') || bare.split('/').some(isGeneratedSegment)) return undefined;
+  if (bare.startsWith('./') || bare.startsWith('../') || bare === '.' || bare === '..') return [path.resolve(fileDir, bare)];
+  const base = options.pathsBasePath ?? options.baseUrl;
+  if (options.paths === undefined || typeof base !== 'string') return undefined;
+  const candidates: string[] = [];
+  for (const [key, targets] of Object.entries(options.paths)) {
+    const star = key.indexOf('*');
+    // A catch-all key (`"*": ["./src/*"]`) matches every package name too.
+    if (star === 0) continue;
+    let captured: string | undefined;
+    if (star === -1) {
+      if (key === bare) captured = '';
+    } else if (bare.length >= key.length - 1 && bare.startsWith(key.slice(0, star)) && bare.endsWith(key.slice(star + 1))) {
+      captured = bare.slice(star, bare.length - (key.length - star - 1));
+    }
+    if (captured === undefined) continue;
+    for (const target of targets) candidates.push(path.resolve(base, target.replace('*', captured)));
+  }
+  return candidates.length > 0 ? candidates : undefined;
+}
+
+/**
+ * A file or folder at `target`, or a file named `target` plus one extension
+ * (`.ts`, `.vue`, `.css`). `validation.test.ts` does not stand in for `validation`.
+ */
+function pathExists(target: string): boolean {
+  if (fs.existsSync(target)) return true;
+  const base = path.basename(target);
+  try {
+    return fs.readdirSync(path.dirname(target)).some(entry => entry.startsWith(`${base}.`) && !entry.slice(base.length + 1).includes('.'));
+  } catch {
+    return false;
+  }
+}
+
 interface ImportSite {
   specifier: ts.StringLiteralLike;
   /** `{ a, b as c }` in `import { ... } from` or `export { ... } from`. */
@@ -382,6 +432,18 @@ export async function checkImports(
       const position = sourceFile.getLineAndCharacterOfPosition(site.specifier.getStart(sourceFile));
       const where = { file, line: position.line + 1, column: position.character + 1 };
       const resolved = ts.resolveModuleName(specifier, file, fileOptions, ts.sys).resolvedModule;
+
+      // `../lib/validation` or `@/lib/format` with no file behind it.
+      const localCandidates = resolved === undefined ? localTargets(specifier, fileDir, fileOptions) : undefined;
+      if (localCandidates !== undefined && !localCandidates.some(pathExists)) {
+        findings.push({
+          type: 'hallucinated_import',
+          ...where,
+          code: `'${specifier}'`,
+          message: `'${specifier}' does not resolve to a file.`
+        });
+        continue;
+      }
 
       if (resolved === undefined && isBarePackageSpecifier(specifier) && scope.hasManifest &&
         !resolution.isAlias(specifier, fileDir, fileOptions)) {
