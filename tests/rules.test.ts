@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { analyzeSource, findUnsafeAssertions, isTestPath } from '../rules.ts';
+import { analyzeSource, findUnsafeAssertions, isFixturePath, isTestPath } from '../rules.ts';
 import { checkImports, isBarePackageSpecifier, type RegistryLookup } from '../imports.ts';
 
 function typesIn(code: string, fileName = 'sample.ts'): string[] {
@@ -435,6 +435,10 @@ test('test paths are recognized', () => {
   assert.equal(isTestPath('src/a.test-d.tsx'), true);
   assert.equal(isTestPath('src/a.spec.ts'), true);
   assert.equal(isTestPath('src/attest.ts'), false);
+  assert.equal(isTestPath('src/v4/__testfixtures__/named.input.tsx'), true);
+  assert.equal(isFixturePath('src/v4/__testfixtures__/named.input.tsx'), true);
+  assert.equal(isFixturePath('src/__tests__/a.test.ts'), false);
+  assert.equal(isFixturePath('e2e/fixtures/auth.ts'), false);
 });
 
 // ---------------------------------------------------------------------------
