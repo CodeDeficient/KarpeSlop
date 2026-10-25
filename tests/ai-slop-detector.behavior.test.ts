@@ -688,3 +688,15 @@ test('finding density counts application code only', async t => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('an invalid config stops the run with exit 1 instead of falling back to defaults', () => {
+  const dir = path.resolve(process.cwd(), 'tests/invalid-config');
+  const result = spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts')],
+    { encoding: 'utf-8', cwd: dir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+  assert.equal(result.status, 1, `stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+  assert.match(result.stderr, /KarpeSlop: Invalid config at .*\.karpesloprc\.json: customPatterns\[0\]\.severity must be one of/);
+  assert.doesNotMatch(result.stdout, /Scanning/);
+});
