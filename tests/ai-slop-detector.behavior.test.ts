@@ -523,3 +523,21 @@ test('-- separator lets paths starting with - be treated as targets, not flags',
     fs.rmdirSync(tmpDir);
   }
 });
+
+test('a full scan includes hand-written files under types/', () => {
+  const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-types-'));
+  fs.mkdirSync(path.join(projectDir, 'src', 'types'), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, 'src', 'types', 'user.ts'), 'export const x = value as any;\n', 'utf-8');
+
+  const result = spawnSync(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve(process.cwd(), 'ai-slop-detector.ts')],
+    { encoding: 'utf-8', cwd: projectDir, env: { ...process.env, KARPESLOP_OFFLINE: '1' } }
+  );
+
+  try {
+    assert.ok(result.stdout.includes('src/types/user.ts'), `stdout:"${result.stdout}" stderr:"${result.stderr}"`);
+  } finally {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+});
