@@ -1,6 +1,8 @@
 # KarpeSlop workflow for GitHub Actions.
 # Copy this file to your project's .github/workflows/ directory.
-# It runs on every pull request and comments on the PR when the check fails.
+# It runs on pull requests to main, master or develop and comments on the PR
+# when the check fails. Pull requests from forks get a read-only token, so the
+# comment is skipped for them; the failed check and the report still show.
 
 name: KarpeSlop Check
 
@@ -34,6 +36,7 @@ jobs:
         with:
           name: ai-slop-report
           path: ai-slop-report.json
+          if-no-files-found: ignore
           retention-days: 7
 
   # Optional: Comment on PR with slop summary
@@ -43,11 +46,13 @@ jobs:
     needs: slop-check
     permissions:
       pull-requests: write
-    if: github.event_name == 'pull_request' && failure()
+    if: github.event_name == 'pull_request' && failure() && github.event.pull_request.head.repo.full_name == github.repository
     
     steps:
+      # Missing when the run failed before the report was written.
       - name: Download Slop Report
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: ai-slop-report
       
@@ -56,6 +61,10 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            if (!fs.existsSync('ai-slop-report.json')) {
+              core.info('No KarpeSlop report: the check failed before writing one.');
+              return;
+            }
             const report = JSON.parse(fs.readFileSync('ai-slop-report.json', 'utf8'));
             
             const body = `## KarpeSlop report
