@@ -32,6 +32,9 @@ Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript 
 - Removed the Karpathy attribution, quote and trademark symbol from the README, package description and CLI output.
 - Removed the unused `npm run build` script, `babel.config.json` and the `@babel/*` devDependencies. The CLI runs `ai-slop-detector.ts` through tsx, so nothing used the `karpeslop-bin.js` it produced.
 
+### Fixed
+- One failed package age check no longer discards the results of all the others. The failure is printed with the package name and version.
+
 ## [1.0.30] - 2026-07-27
 
 ### Breaking

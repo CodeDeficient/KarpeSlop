@@ -12,6 +12,7 @@ import {
   isExcludedPath,
   isRegistryBackedLockfileEntry,
   parseVersionRange,
+  pLimit,
   shouldAnalyzePathInQuietMode,
   splitCliArgs,
 } from '../ai-slop-detector.ts';
@@ -95,6 +96,40 @@ test('parseVersionRange intentionally only handles caret and tilde', () => {
   assert.deepStrictEqual(parseVersionRange('1.x'), { actualVersion: '1.x', isRange: false });
   assert.deepStrictEqual(parseVersionRange('latest'), { actualVersion: 'latest', isRange: false });
   assert.deepStrictEqual(parseVersionRange('*'), { actualVersion: '*', isRange: false });
+});
+
+test('pLimit reports a rejected task to onError and still returns the other results', async () => {
+  const failures: Array<[string, number]> = [];
+  const results = await pLimit([
+    async () => 1,
+    async () => { throw new Error('registry exploded'); },
+    async () => 3,
+  ], 2, undefined, (error, index) => failures.push([error instanceof Error ? error.message : String(error), index]));
+
+  assert.deepEqual(results, [1, undefined, 3]);
+  assert.deepEqual(failures, [['registry exploded', 1]]);
+});
+
+test('pLimit without onError rejects with the task error', async () => {
+  await assert.rejects(
+    pLimit([async () => { throw new Error('registry exploded'); }], 1),
+    /registry exploded/
+  );
+});
+
+test('a failed package age check names the package and keeps the others', async (t) => {
+  const detector = new AISlopDetector(process.cwd());
+  detector['getNpmPackageAge'] = async (pkgName: string) => {
+    if (pkgName === 'broken') throw new Error('boom');
+    return null;
+  };
+  const warn = t.mock.method(console, 'warn', () => {});
+
+  const manifest = JSON.stringify({ dependencies: { fine: '^1.0.0', broken: '^2.0.0' } });
+  await detector['analyzePackageVersions']('/repo/package.json', manifest);
+
+  assert.equal(warn.mock.callCount(), 1);
+  assert.match(String(warn.mock.calls[0].arguments[0]), /broken@2\.0\.0 failed: boom/);
 });
 
 test('splitCliArgs respects -- separator and prevents flag-like paths from being treated as options', () => {
