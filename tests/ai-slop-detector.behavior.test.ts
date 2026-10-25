@@ -777,6 +777,31 @@ test('npm registry requests send a karpeslop User-Agent', async (t) => {
   assert.deepEqual(userAgents, [`karpeslop/${version}`, `karpeslop/${version}`]);
 });
 
+test('fresh_package_version skips packages the scanned workspace publishes itself', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-workspace-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'repo', private: true }));
+    fs.mkdirSync(path.join(dir, 'packages', 'core'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'packages', 'core', 'package.json'), JSON.stringify({ name: '@acme/core', version: '5.1.0' }));
+    fs.mkdirSync(path.join(dir, 'examples', 'basic'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'examples', 'basic', 'package.json'),
+      JSON.stringify({ name: 'basic-example', dependencies: { '@acme/core': '^5.1.0', 'left-pad': '^1.3.0' } }));
+    const now = new Date().toISOString();
+    t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ time: { '5.1.0': now, '1.3.0': now } }), { status: 200 }));
+    t.mock.method(console, 'log', () => {});
+    const savedOffline = process.env.KARPESLOP_OFFLINE;
+    delete process.env.KARPESLOP_OFFLINE;
+    try {
+      const issues = await new AISlopDetector(dir, undefined, async () => 'exists').detect();
+      assert.deepEqual(issues.filter(issue => issue.type === 'fresh_package_version').map(issue => issue.code), ['"left-pad": "1.3.0"']);
+    } finally {
+      if (savedOffline !== undefined) process.env.KARPESLOP_OFFLINE = savedOffline;
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('finding density counts application code only', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-density-'));
   try {

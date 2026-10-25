@@ -249,6 +249,15 @@ export function uniqueRealFiles(files: readonly string[]): string[] {
   return [...byRealPath.values()];
 }
 
+function readPackageName(manifestPath: string): string | undefined {
+  try {
+    const name = asRecord(JSON.parse(fs.readFileSync(manifestPath, 'utf-8')))?.name;
+    return typeof name === 'string' && name !== '' ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function isCliPath(filePath: string, content: string): boolean {
   if (content.startsWith('#!')) return true;
   const normalized = filePath.replace(/\\/g, '/');
@@ -292,6 +301,8 @@ class AISlopDetector {
   private registryWarningLogged = false;
   private registryUnavailable = false;
   private reportedFreshPackageKeys = new Set<string>();
+  /** Names of the packages the scanned workspace itself publishes; their fresh versions are its own releases. */
+  private workspacePackages = new Set<string>();
   private targetPaths: string[] = [];
   private summary: ScanSummary = { filesScanned: 0, linesScanned: 0, applicationLinesScanned: 0 };
   private lineCounts = new Map<string, number>();
@@ -484,6 +495,10 @@ class AISlopDetector {
     }
 
     const codeFiles = filesToAnalyze.filter(file => !this.manifestFilenames.includes(path.basename(file)));
+    this.workspacePackages = new Set(filesToAnalyze
+      .filter(file => path.basename(file) === 'package.json')
+      .map(file => readPackageName(file))
+      .filter(name => name !== undefined));
     for (const file of filesToAnalyze) {
       await this.analyzeFile(file, quiet);
     }
@@ -755,7 +770,8 @@ class AISlopDetector {
           // for package freshness.
           if (!isRegistryBackedLockfileEntry(pkgPath)) continue;
           const info = asRecord(pkgInfo);
-          if (info === undefined || typeof info.version !== 'string') continue;
+          // `"link": true` points node_modules at a workspace folder.
+          if (info === undefined || info.link === true || typeof info.version !== 'string') continue;
           const pkgName = typeof info.name === 'string' && info.name
             ? info.name
             : pkgPath.split('node_modules/').pop() || pkgPath;
@@ -780,7 +796,8 @@ class AISlopDetector {
       // Keep the rule narrow on purpose: only caret/tilde ranges are treated
       // as "fresh package" candidates in package.json. package-lock.json is
       // always checked because it contains the resolved version.
-      .filter(({ isRange }) => isRange || filePath.endsWith('package-lock.json'));
+      .filter(({ isRange }) => isRange || filePath.endsWith('package-lock.json'))
+      .filter(({ pkgName }) => !this.workspacePackages.has(pkgName));
 
     // Bound concurrency: npm registry rate-limits unauthenticated callers at
     // ~600 req/min, and a typical package-lock.json has 200-1000 deps.
