@@ -802,6 +802,29 @@ test('checkImports: aliases from a nested tsconfig or a bundler config are not p
   }
 });
 
+test('checkImports: a bundler config name that only starts like the import is not an alias', async () => {
+  const dir = makeProject({
+    'package.json': JSON.stringify({ name: 'app', dependencies: { 'vite-plugin-pwa': '1.0.0' } }),
+    'vite.config.ts': "import { VitePWA } from 'vite-plugin-pwa';\nexport default { resolve: { alias: { '~': '/src' } } };\n",
+    'src/a.ts': "import { x } from 'vite-plugin';\nimport { y } from '~/lib/y';\n",
+    'tsconfig.json': JSON.stringify({ compilerOptions: { paths: { '@acme/ui': ['./src/ui.ts'], '@acme': ['./src/acme.ts'], '@app/*': ['./src/*'] } } }),
+    'vite.config.mts': "import pwa from '@vite-pwa/core';\nexport default { resolve: { alias: { '@components': '/src/c' } } };\n",
+    'src/b.ts': "import a from '@vite-pwa/other';\nimport b from '@acme/other';\nimport c from '@components/Button';\nimport d from '@app/lib';\n",
+    'src/lib.ts': 'export default 1;\n',
+    'webpack.config.js': "module.exports = { resolve: { alias: { '@wp/ui$': './src/ui', '@all/*': './src/all/*' } } };\n",
+    'src/@ui/Button.ts': 'export default 1;\n',
+    'src/c.ts': "import w from '@wp/ui';\nimport u from '@ui/Button';\nimport a from '@all/thing';\n"
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/a.ts'), path.join(dir, 'src/b.ts'), path.join(dir, 'src/c.ts')], dir, registry);
+    // A scoped name in a config or tsconfig paths covers that package only, not its whole scope.
+    assert.deepEqual(findings.map(f => [path.basename(f.file), f.type, f.line]),
+      [['a.ts', 'undeclared_dependency', 1], ['b.ts', 'undeclared_dependency', 1], ['b.ts', 'undeclared_dependency', 2]]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: paths from a solution-style tsconfig\'s references are honored', async () => {
   const dir = makeProject({
     'package.json': JSON.stringify({ name: 'app' }),

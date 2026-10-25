@@ -345,15 +345,31 @@ class ResolutionIndex {
     if (this.denoImportKeys(fileDir).some(key => key.endsWith('/') ? specifier.startsWith(key) : specifier === key || specifier.startsWith(`${key}/`))) {
       return true;
     }
-    const first = specifier.split('/')[0];
+    const [first, second] = specifier.split('/');
+    // `@scope/ui` names one package, so it says nothing about `@scope/other`.
+    const scoped = first.length > 1 && first.startsWith('@') && second !== undefined;
     const pathKeys = Object.keys(options.paths ?? {});
-    if (pathKeys.some(key => key.split('/')[0].replace(/\*$/, '') === first)) return true;
+    if (pathKeys.some(key => {
+      const [head, next] = key.split('/');
+      if (head.replace(/\*$/, '') !== first) return false;
+      if (!scoped) return true;
+      // An exact key such as `@scope` matches only itself.
+      if (next === undefined) return head.endsWith('*');
+      return next.endsWith('*') ? second.startsWith(next.slice(0, -1)) : next === second;
+    })) return true;
     const baseDirs = [options.baseUrl, options.pathsBasePath, path.join(path.dirname(findProjectConfig(fileDir) ?? fileDir), 'src')];
+    // A local `src/@ui/` folder makes `@ui` a namespace of local modules.
     for (const base of baseDirs) {
       if (typeof base === 'string' && fs.existsSync(path.join(base, first))) return true;
     }
-    const text = this.bundlerConfigText(fileDir);
-    return text.includes(`'${first}`) || text.includes(`"${first}`) || text.includes(`\`${first}`);
+    // The whole quoted name, or a path under it: `'@components'`, `"~/lib"`,
+    // webpack's exact-match `'@acme/ui$'`, a whole scope (`'@acme/*'`). A
+    // longer name that starts the same way (`'zod-mini'` for `zod`) is not it.
+    const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const quoted = scoped
+      ? new RegExp(`['"\`]${escape(first)}(\\$?['"\`]|/\\*?['"\`]|/${escape(second)}(\\$?['"\`]|/))`)
+      : new RegExp(`['"\`]${escape(first)}(\\$?['"\`]|/)`);
+    return quoted.test(this.bundlerConfigText(fileDir));
   }
 }
 
