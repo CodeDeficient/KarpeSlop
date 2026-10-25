@@ -476,7 +476,8 @@ const ELIDED_COMMENT = new RegExp([
   String.raw`^(\.\.\.|…)?\s*[[(]?\s*(\w+\s+)?(existing|previous|original|other|remaining|same|more)\s+(\w+\s+){0,2}?(code|logic|implementation|methods?|functions?|fields?|props|properties|handlers?|cases|routes|actions|imports|config|options|steps|styles?|components?|elements|items|endpoints)(\s+\w+){0,2}?\s+(here|unchanged|remains?(\s+(unchanged|the\s+same))?|stays?(\s+the\s+same)?|the\s+same|as\s+(before|is)|omitted|similarly|go(es)?\s+here|as\s+needed)\s*(\.\.\.|…)?\s*[\])]?\.?$`,
   // "add more cases as needed", "implement the remaining endpoints similarly"
   String.raw`^(add|insert|include|handle|implement|repeat)\s+(more|other|additional|remaining|the\s+other|the\s+remaining)\s+\w+(\s+\w+)?\s+(here|as\s+needed|similarly|if\s+needed|the\s+same\s+way)\b`,
-  String.raw`\b(omitted|truncated|elided|skipped)\s+for\s+brevity\b`,
+  // "implementation omitted for brevity", but not "stack traces are omitted for brevity in logs"
+  String.raw`^(?!.*\b(is|are|was|were|be|been)\b)(\.\.\.|…)?\s*[[(]?\s*(\w+\s+){0,3}(omitted|truncated|elided|skipped)\s+for\s+brevity\s*(\.\.\.|…)?\s*[\])]?\.?$`,
   String.raw`^(etc\.?|and\s+so\s+on\.?)$`
 ].join('|'), 'i');
 
