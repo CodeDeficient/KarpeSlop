@@ -189,7 +189,7 @@ export function isExcludedPath(filePath: string, rootDir: string, allowOutsideRo
     excludedSegment('out') ||
     excludedSegment('temp') ||
     segments.some(segment => segment.startsWith('.')) ||
-    pathToMatch.endsWith('.d.ts');
+    /\.d\.[cm]?ts$/.test(pathToMatch);
 }
 
 function isCliPath(filePath: string, content: string): boolean {
@@ -422,6 +422,8 @@ class AISlopDetector {
       '**/node_modules/**',
       '**/.*',
       '**/*.d.ts',
+      '**/*.d.mts',
+      '**/*.d.cts',
       '**/coverage/**',
       '**/out/**',
       '**/temp/**',

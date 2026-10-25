@@ -65,6 +65,8 @@ test('isExcludedPath scans hand-written types/ folders but still skips .d.ts fil
   assert.equal(isExcludedPath('/repo/src/types/user.ts', rootDir), false);
   assert.equal(isExcludedPath('/repo/types/api.ts', rootDir), false);
   assert.equal(isExcludedPath('/repo/src/types/global.d.ts', rootDir), true);
+  assert.equal(isExcludedPath('/repo/types/esm.d.mts', rootDir), true);
+  assert.equal(isExcludedPath('/repo/types/cjs.d.cts', rootDir), true);
 });
 
 test('isExcludedPath with allowOutsideRoot preserves targets outside repo root', () => {
