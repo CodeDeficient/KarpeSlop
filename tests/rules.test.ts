@@ -153,6 +153,15 @@ test('cast, any and non-null rules run on TypeScript files only', () => {
   }
 });
 
+test('casts: a cast followed by as unknown is still reported', () => {
+  assert.deepEqual(typesIn('const y = x as Foo as unknown;'), ['type_assertion']);
+  assert.deepEqual(typesIn('const y = (x as Foo) as unknown;'), ['type_assertion']);
+  assert.deepEqual(typesIn('const y = x as Foo[] as unknown;'), ['unsafe_array_assertion']);
+  // Through `as unknown` into a further cast, it is one chain again.
+  assert.deepEqual(typesIn('const y = x as Foo as unknown as Bar;'), ['unsafe_double_type_assertion']);
+  assert.deepEqual(typesIn('const y = (x as Foo as unknown) as Bar;'), ['unsafe_double_type_assertion']);
+});
+
 test('non-null assertions are reported', () => {
   assert.equal(countOf('const a = map.get(k)!;', 'non_null_assertion'), 1);
   assert.equal(countOf('if (a !== b) {}', 'non_null_assertion'), 0);

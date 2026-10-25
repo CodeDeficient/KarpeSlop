@@ -378,8 +378,12 @@ function innerCast(node: AssertionNode): AssertionNode | undefined {
 /** True for the inner half of a chained cast, which is reported as part of the chain. */
 function isInnerOfChain(node: AssertionNode): boolean {
   let parent = node.parent;
-  while (ts.isParenthesizedExpression(parent)) parent = parent.parent;
-  return isAssertion(parent) && !isConstAssertion(parent.type);
+  // Look past `as unknown`: `x as Foo as unknown` ends with a safe cast and is
+  // no chain, but `x as Foo as unknown as Bar` is one, reported at `as Bar`.
+  while (ts.isParenthesizedExpression(parent) || (isAssertion(parent) && parent.type.kind === ts.SyntaxKind.UnknownKeyword)) {
+    parent = parent.parent;
+  }
+  return isCast(parent);
 }
 
 function classifyCast(node: AssertionNode): CastReport[] {
