@@ -375,7 +375,8 @@ export async function checkImports(
 
       const exported = new Set(checker.getExportsOfModule(moduleSymbol).map(symbol => symbol.name));
       // Modules typed as `export = something` without members expose nothing we can check.
-      if (exported.size === 0) continue;
+      // An ES module with no exports (`export {}`) is still checked.
+      if (exported.size === 0 && moduleSymbol.exports?.has(ts.InternalSymbolName.ExportEquals)) continue;
       if (site.defaultImport !== undefined && !exported.has('default') && !hasSyntheticDefault(program, moduleSymbol, resolved)) {
         findings.push(missingExportFinding(sourceFile, site.defaultImport, specifier, 'default', file));
       }
