@@ -23,8 +23,8 @@
         "**/generated/**"
     ],
     "severityOverrides": {
-        "magic_css_value": "medium",
-        "production_console_log": "low"
+        "type_assertion": "low",
+        "production_console_log": "off"
     },
     "blockOnCritical": true
 }

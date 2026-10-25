@@ -12,7 +12,7 @@ on:
 
 jobs:
   slop-check:
-    name: Detect AI Slop
+    name: KarpeSlop
     runs-on: ubuntu-latest
     
     steps:
@@ -56,7 +56,7 @@ jobs:
             const fs = require('fs');
             const report = JSON.parse(fs.readFileSync('ai-slop-report.json', 'utf8'));
             
-            const body = `## 🐷 KarpeSlop Detection Report
+            const body = `## KarpeSlop report
             
             | Severity | Count |
             |----------|-------|
@@ -67,7 +67,7 @@ jobs:
             
             **Total Issues:** ${report.totalOccurrences}
             
-            ${report.bySeverity.critical > 0 ? '❌ **BLOCKING:** Critical issues detected (hallucinated imports)' : ''}
+            ${report.bySeverity.critical > 0 ? '❌ **BLOCKING:** Critical findings (imports or packages that do not exist)' : ''}
             
             See the full report in the Actions artifacts.`;
             

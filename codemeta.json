@@ -2,7 +2,7 @@
     "@context": "https://raw.githubusercontent.com/codemeta/codemeta/2.0/codemeta.jsonld",
     "@type": "SoftwareSourceCode",
     "name": "KarpeSlop",
-    "description": "The linter Andrej Karpathy wishes existed. Detects the three axes of AI slop: Information Utility (Noise), Information Quality (Lies), and Style/Taste (Soul). Fast, opinionated static analysis for TypeScript and JavaScript.",
+    "description": "Finds the mistakes that slip into unreviewed AI-assisted TypeScript and JavaScript: imports and packages that do not exist, placeholder code, swallowed errors, unchecked fetch responses, any and type casts. AST-based static analysis.",
     "version": "1.0.20",
     "license": "https://spdx.org/licenses/MIT.html",
     "codeRepository": "https://github.com/CodeDeficient/karpeslop",
@@ -26,7 +26,6 @@
         "static analysis",
         "AI-generated code",
         "Copilot",
-        "Karpathy",
         "type safety"
     ],
     "author": {

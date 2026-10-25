@@ -2,6 +2,29 @@
 
 All notable changes will be documented in this file.
 
+## [Unreleased]
+
+Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript codebases (zustand `src`, TanStack Query `query-core/src` and `react-query/src`) and a file with eight planted mistakes typical of generated code. Before: 300 findings on the clean code, mostly false positives, and 1 of 8 planted mistakes caught. After: every finding on the clean code is a real cast, `any`, `!`, TODO or restating comment, and 8 of 8 planted mistakes are caught.
+
+### Breaking
+- **Rules rebuilt on the TypeScript AST.** Built-in rules no longer match lines of text, so strings, JSX text and multi-line code are handled correctly. User `customPatterns` are still line regexes.
+- **Removed rules** (they were unreliable or wrong): `redundant_self_explanatory_comment`, `excessive_boilerplate_comment`, `debug_log_with_comment`, `hallucinated_react_import` and `hallucinated_next_import` (replaced by `hallucinated_import`), `todo_implementation_placeholder` (replaced by `placeholder_implementation`), `assumption_comment`, `overconfident_comment`, `hedging_uncertainty_comment` (replaced by the narrower `hedging_comment`), `unnecessary_iife_wrapper`, `vibe_coded_ternary_abuse`, `magic_css_value`, `useEffect_derived_state`, `useEffect_empty_deps_suspicious`, `setState_in_loop`, `useCallback_no_deps`, `array_any_type`, `generic_any_type`, `function_param_any_type`, `index_signature_any` (all folded into `any_type_usage`), `missing_error_handling` (replaced by `unchecked_fetch_response`), `unsafe_member_access`, `complex_nested_conditionals`. Overrides for removed ids are ignored.
+- **Exit codes:** exit 1 now means a finding at medium severity or above. Low-severity findings are informational.
+- **Score removed.** The "Karpathy Slop Index" point total grew with repo size and wasn't comparable between projects. The summary now reports findings by severity and per 1,000 lines.
+- **`--quiet`** now includes `src/` and always skips test files.
+
+### Added
+- `hallucinated_import`: named imports checked against the module's real exports via the TypeScript checker, including multi-line and aliased imports. Falls back to a list of well-known mix-ups when types aren't installed, and suggests where the symbol really lives.
+- `nonexistent_package` and `undeclared_dependency`: bare imports checked against every `package.json` up the tree, `node_modules`, and the npm registry.
+- `placeholder_implementation`, `elided_code_comment`, `placeholder_value`, `empty_catch`, `unchecked_fetch_response`, `type_assertion`, `non_null_assertion`, `ts_suppression`, `blanket_eslint_disable`, `restating_comment`, `filler_comment`.
+- `<T>x` casts are detected alongside `x as T`.
+- `KARPESLOP_OFFLINE=1` skips npm registry requests.
+- `npm run typecheck`: the tool's own source is checked with `strict` and contains no casts, non-null assertions or `any`.
+
+### Changed
+- Messages describe the code, not its author. Fix text is only shown when the fix is certain; otherwise the finding says what to check and links the relevant docs.
+- Removed the Karpathy attribution, quote and trademark symbol from the README, package description and CLI output.
+
 ## [1.0.30] - 2026-07-27
 
 ### Breaking
