@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- `hallucinated_import` checks names re-exported with `export { a, b } from 'mod'`, not only imports.
 - `hallucinated_import` checks default imports. `import dateFns from 'date-fns'` is reported when the module is an ES module with no default export, following the same rule as TypeScript: CommonJS modules (`export =`, or a declaration file not in ES module format) get a synthesized default and are not reported.
 - Finding density is per 1,000 lines of application code: test files, whose findings most rules skip, are left out of both sides. The JSON report adds `applicationLinesScanned`.
 - Each real file is scanned once. Symlinked copies (TanStack Query links the root lint config into every package) were scanned and reported once per link.

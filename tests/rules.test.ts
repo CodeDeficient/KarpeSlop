@@ -504,6 +504,19 @@ test('checkImports: a default import from a module with no default export is rep
   }
 });
 
+test('checkImports: names re-exported with export { } from are checked', async () => {
+  const dir = makeProject({
+    ...fakeReact,
+    'src/index.ts': "export { useState, useRouter } from 'react';\nexport * from 'react';\n"
+  });
+  try {
+    const findings = await checkImports([path.join(dir, 'src/index.ts')], dir, registry);
+    assert.deepEqual(findings.map(f => [f.type, f.code]), [['hallucinated_import', "export { useRouter } from 'react'"]]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: undeclared and nonexistent packages', async () => {
   const dir = makeProject({
     ...fakeReact,

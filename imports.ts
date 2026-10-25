@@ -279,7 +279,8 @@ class ResolutionIndex {
 
 interface ImportSite {
   specifier: ts.StringLiteralLike;
-  namedImports: ts.ImportSpecifier[];
+  /** `{ a, b as c }` in `import { ... } from` or `export { ... } from`. */
+  namedImports: Array<ts.ImportSpecifier | ts.ExportSpecifier>;
   /** `x` in `import x from 'mod'`. */
   defaultImport?: ts.Identifier;
 }
@@ -295,7 +296,11 @@ function collectImportSites(sourceFile: ts.SourceFile): ImportSite[] {
         defaultImport: node.importClause?.name
       });
     } else if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined && ts.isStringLiteral(node.moduleSpecifier)) {
-      sites.push({ specifier: node.moduleSpecifier, namedImports: [] });
+      const clause = node.exportClause;
+      sites.push({
+        specifier: node.moduleSpecifier,
+        namedImports: clause !== undefined && ts.isNamedExports(clause) ? [...clause.elements] : []
+      });
     } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isStringLiteralLike(node.arguments[0]) &&
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
         (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
@@ -440,7 +445,7 @@ function hasUnresolvedStarExport(program: ts.Program, options: ts.CompilerOption
 
 function missingExportFinding(
   sourceFile: ts.SourceFile,
-  element: ts.ImportSpecifier | ts.Identifier,
+  element: ts.ImportSpecifier | ts.ExportSpecifier | ts.Identifier,
   moduleName: string,
   imported: string,
   file: string
@@ -452,7 +457,9 @@ function missingExportFinding(
     file,
     line: position.line + 1,
     column: position.character + 1,
-    code: isDefault ? `import ${element.text} from '${moduleName}'` : `import { ${imported} } from '${moduleName}'`,
+    code: isDefault
+      ? `import ${element.text} from '${moduleName}'`
+      : `${ts.isExportSpecifier(element) ? 'export' : 'import'} { ${imported} } from '${moduleName}'`,
     message: isDefault ? `'${moduleName}' has no default export.` : `'${imported}' is not exported by '${moduleName}'.`,
     fix: hintFor(moduleName, imported)
   };
