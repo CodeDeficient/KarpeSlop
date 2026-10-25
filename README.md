@@ -1,6 +1,7 @@
 # KarpeSlop
 
 [![npm version](https://img.shields.io/npm/v/karpeslop.svg)](https://www.npmjs.com/package/karpeslop)
+[![npm downloads](https://img.shields.io/npm/dt/karpeslop.svg)](https://www.npmjs.com/package/karpeslop)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A linter for the mistakes AI coding tools tend to leave in TypeScript and JavaScript.
