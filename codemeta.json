@@ -3,7 +3,7 @@
     "@type": "SoftwareSourceCode",
     "name": "KarpeSlop",
     "description": "Finds the mistakes that slip into unreviewed AI-assisted TypeScript and JavaScript: imports and packages that do not exist, placeholder code, swallowed errors, unchecked fetch responses, any and type casts. AST-based static analysis.",
-    "version": "1.0.20",
+    "version": "2.0.0",
     "license": "https://spdx.org/licenses/MIT.html",
     "codeRepository": "https://github.com/CodeDeficient/karpeslop",
     "programmingLanguage": [
