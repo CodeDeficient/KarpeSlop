@@ -45,6 +45,8 @@ npx karpeslop@latest
 | `production_console_log` | low | `console.log/debug/info` outside tests and CLI scripts |
 | `fresh_package_version` | medium | A dependency version published within `minPackageAgeDays` (default 7). New releases are where typosquats and compromised versions usually land |
 
+The cast rules (`unsafe_*_assertion`, `type_assertion`) and `any_type_usage` only run on TypeScript files (`.ts`, `.tsx`, `.mts`, `.cts`). JavaScript has no casts or types, so `.js`, `.jsx`, `.mjs` and `.cjs` files get every other rule.
+
 Rules marked for application code skip test files (`__tests__/`, `*.test.*`, `*.spec.*`, `test/`, `tests/`, fixtures).
 
 ## Usage
