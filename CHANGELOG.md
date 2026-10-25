@@ -8,6 +8,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- A run whose paths are all missing, ignored or unsupported ends with a one-line error instead of a stack trace.
 - An unknown command-line option stops the run with exit 1 and names the option. `--stirct` used to run without strict mode. A `severityOverrides` key that is not a rule id or custom pattern id prints a warning: `type_asertion: "off"` used to do nothing, silently.
 - A `customPatterns` entry whose `id` is a built-in rule id (`empty_catch`) or the id of another custom pattern is an invalid config. A shared id made `severityOverrides` and the exit code treat two rules as one.
 - A run fails (exit 1) on high and critical findings only. Medium findings such as `type_assertion` and `any_type_usage` are still reported but no longer fail a build; every clean repository tested (ky, express, hono, zod, date-fns, TanStack Query) exited 1 before. `--fail-on=<critical|high|medium|low>` sets the threshold.
