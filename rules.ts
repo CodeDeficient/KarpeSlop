@@ -697,6 +697,28 @@ function declaresName(sourceFile: ts.SourceFile, name: string): boolean {
   return found;
 }
 
+/**
+ * `try { return parse(x); } catch {}` followed by more code: the catch falls
+ * through to a fallback (the code after the try, or the next loop iteration),
+ * so the error is handled by design rather than swallowed.
+ */
+function isFallbackCatch(clause: ts.CatchClause): boolean {
+  const tryStatement = clause.parent;
+  const last = tryStatement.tryBlock.statements.at(-1);
+  if (last === undefined || !ts.isReturnStatement(last)) return false;
+  let current: ts.Node = tryStatement;
+  while (!ts.isFunctionLike(current.parent) && !ts.isSourceFile(current)) {
+    const parent = current.parent;
+    if (ts.isIterationStatement(parent, false)) return true;
+    if (ts.isBlock(parent) || ts.isSourceFile(parent) || ts.isCaseOrDefaultClause(parent)) {
+      const index = parent.statements.findIndex(statement => statement === current);
+      if (index < parent.statements.length - 1) return true;
+    }
+    current = parent;
+  }
+  return false;
+}
+
 function enclosingFunctionOrFile(node: ts.Node): ts.Node {
   let current: ts.Node | undefined = node.parent;
   while (current !== undefined) {
@@ -780,7 +802,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     }
 
     if (ts.isCatchClause(node) && node.block.statements.length === 0 &&
-      commentsWithin(node.block).length === 0) {
+      commentsWithin(node.block).length === 0 && !isFallbackCatch(node)) {
       report('empty_catch', node);
     }
 
