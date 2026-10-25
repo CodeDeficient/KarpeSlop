@@ -217,6 +217,13 @@ test('findUnsafeAssertions does not report as keyof T', () => {
   assert.equal(findUnsafeAssertions('type K = keyof T; const k = v as keyof T;', 'x.ts').length, 0);
 });
 
+test('findUnsafeAssertions does not report in JavaScript files', () => {
+  for (const fileName of ['x.js', 'x.jsx', 'x.mjs', 'x.cjs']) {
+    assert.equal(findUnsafeAssertions('const y = value as any;\nconst z = (v as unknown) as Foo;', fileName).length, 0, fileName);
+  }
+  assert.equal(findUnsafeAssertions('const y = value as any;', 'x.mts').length, 1);
+});
+
 test('findUnsafeAssertions does not report in .d.ts files', () => {
   assert.equal(findUnsafeAssertions('const x = value as unknown as Foo;', 'types.d.ts').length, 0);
 });

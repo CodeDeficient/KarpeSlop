@@ -216,6 +216,11 @@ export function isTestPath(filePath: string): boolean {
     /(^|\/)test-[^/]*$/.test(normalized);
 }
 
+/** Casts and `any` exist only in TypeScript, so those rules skip JavaScript files. */
+function isTypeScriptFile(fileName: string): boolean {
+  return /\.[cm]?tsx?$/.test(fileName);
+}
+
 export function scriptKindFor(fileName: string): ts.ScriptKind {
   if (fileName.endsWith('.tsx')) return ts.ScriptKind.TSX;
   if (fileName.endsWith('.jsx')) return ts.ScriptKind.JSX;
@@ -398,7 +403,7 @@ function classifyCast(node: AssertionNode): CastReport[] {
  * Other casts are reported by analyzeSource as type_assertion.
  */
 export function findUnsafeAssertions(sourceText: string, fileName: string): UnsafeAssertionFinding[] {
-  if (fileName.endsWith('.d.ts')) return [];
+  if (!isTypeScriptFile(fileName) || fileName.endsWith('.d.ts')) return [];
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
   return unsafeAssertionsIn(sourceFile, fileName);
 }
@@ -712,7 +717,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
   const sourceFile = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true, scriptKindFor(fileName));
   const comments = collectComments(sourceFile);
   const findings: Finding[] = [];
-  const isTypeScript = /\.[cm]?tsx?$/.test(fileName);
+  const isTypeScript = isTypeScriptFile(fileName);
 
   const positionOf = (pos: number) => {
     const { line, character } = sourceFile.getLineAndCharacterOfPosition(pos);
