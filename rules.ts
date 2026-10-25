@@ -1046,7 +1046,8 @@ function isFallbackCatch(clause: ts.CatchClause): boolean {
  * a return after the try.
  */
 function assignsOnlyOuterVariables(tryStatement: ts.TryStatement): boolean {
-  const statements = tryStatement.tryBlock.statements;
+  // Local declarations feed the assignment: `const stats = await stat(p); isDir = stats.isDirectory();`
+  const statements = tryStatement.tryBlock.statements.filter(statement => !ts.isVariableStatement(statement));
   if (statements.length === 0) return false;
   const scope = enclosingFunctionOrFile(tryStatement);
   return statements.every(statement => {
@@ -1245,8 +1246,9 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === 'catch' && node.arguments.length === 1) {
       const handler = node.arguments[0];
+      // `void p.catch(() => {})` says the result is dropped on purpose.
       if ((ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) && ts.isBlock(handler.body) &&
-        handler.body.statements.length === 0 &&
+        handler.body.statements.length === 0 && !ts.isVoidExpression(node.parent) &&
         commentsWithin(handler.body).length === 0 && !isIgnoredBinding(handler.parameters[0]?.name)) {
         report('empty_catch', node.expression.name);
       }
