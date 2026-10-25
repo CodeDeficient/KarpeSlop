@@ -612,9 +612,18 @@ function stem(word: string): string {
   return word.length > 3 ? word.replace(/(ies|es|s)$/, '') : word;
 }
 
-/** A doc comment whose only content restates parameter names or opens with stock filler. */
-function isFillerComment(comment: CommentInfo): boolean {
-  if (FILLER_OPENING.test(comment.body)) return true;
+/**
+ * A doc comment whose only content restates parameter names, or a stock
+ * opener ("This function is used to ...") whose summary repeats the code
+ * that follows (`codeWords`, stemmed).
+ */
+function isFillerComment(comment: CommentInfo, codeWords: ReadonlySet<string>): boolean {
+  const opener = FILLER_OPENING.exec(comment.body);
+  if (opener !== null) {
+    const summary = comment.body.slice(opener[0].length).split('\n').filter(line => !line.trim().startsWith('@')).join(' ');
+    const content = splitWords(summary).filter(word => !RESTATING_STOPWORDS.has(word));
+    if (content.every(word => codeWords.has(stem(word)))) return true;
+  }
   if (comment.isLineComment) return false;
   let tagLines = 0;
   for (const line of comment.body.split('\n').map(text => text.trim())) {
@@ -1096,7 +1105,7 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
       reportComment('hedging_comment', comment);
       continue;
     }
-    if (isFillerComment(comment)) {
+    if (isFillerComment(comment, new Set(splitWords(lineAfter(sourceFile, comment)).map(stem)))) {
       reportComment('filler_comment', comment);
       continue;
     }
@@ -1116,6 +1125,14 @@ export function analyzeSource(sourceText: string, fileName: string): Finding[] {
   }
 
   return findings;
+}
+
+/** The first non-blank line of code after a comment ends. */
+function lineAfter(sourceFile: ts.SourceFile, comment: CommentInfo): string {
+  const rest = sourceFile.text.slice(comment.end);
+  const newline = rest.indexOf('\n');
+  const following = newline === -1 ? '' : rest.slice(newline + 1);
+  return following.split('\n').find(line => line.trim() !== '')?.trim() ?? '';
 }
 
 function isRestatingComment(sourceFile: ts.SourceFile, comment: CommentInfo): boolean {
