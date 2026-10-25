@@ -2,9 +2,14 @@
 
 All notable changes will be documented in this file.
 
-## [Unreleased]
+## [2.0.0] - 2026-10-25
 
 Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript codebases (zustand `src`, TanStack Query `query-core/src` and `react-query/src`) and a file with eight planted mistakes typical of generated code. Before: 300 findings on the clean code, mostly false positives, and 1 of 8 planted mistakes caught. After: every finding on the clean code is a real cast, `any`, `!`, TODO or restating comment, and 8 of 8 planted mistakes are caught.
+
+### Upgrading from 1.x
+- Remove `severityOverrides` entries for the removed rule ids listed below. They are ignored now. The replacement ids are listed next to each removed rule.
+- CI that fails on any finding should expect exit 1 only for medium severity and above. `--strict` still exits 2 on critical findings.
+- Anything that read the slop score from the output should read the per-severity counts instead.
 
 ### Breaking
 - **Rules rebuilt on the TypeScript AST.** Built-in rules no longer match lines of text, so strings, JSX text and multi-line code are handled correctly. User `customPatterns` are still line regexes.
@@ -12,6 +17,7 @@ Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript 
 - **Exit codes:** exit 1 now means a finding at medium severity or above. Low-severity findings are informational.
 - **Score removed.** The "Karpathy Slop Index" point total grew with repo size and wasn't comparable between projects. The summary now reports findings by severity and per 1,000 lines.
 - **`--quiet`** now includes `src/` and always skips test files.
+- **Folders named `types` are scanned.** Only `.d.ts` files are skipped as declarations. Generated `.ts` type files (Supabase, GraphQL codegen) under `types/` now get findings; add their path to `ignorePaths` to skip them.
 
 ### Added
 - `hallucinated_import`: named imports checked against the module's real exports via the TypeScript checker, including multi-line and aliased imports. Falls back to a list of well-known mix-ups when types aren't installed, and suggests where the symbol really lives.
@@ -24,6 +30,7 @@ Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript 
 ### Changed
 - Messages describe the code, not its author. Fix text is only shown when the fix is certain; otherwise the finding says what to check and links the relevant docs.
 - Removed the Karpathy attribution, quote and trademark symbol from the README, package description and CLI output.
+- Removed the unused `npm run build` script, `babel.config.json` and the `@babel/*` devDependencies. The CLI runs `ai-slop-detector.ts` through tsx, so nothing used the `karpeslop-bin.js` it produced.
 
 ## [1.0.30] - 2026-07-27
 
