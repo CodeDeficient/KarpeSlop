@@ -14,6 +14,7 @@ import path from 'path';
 import { glob } from 'glob';
 import { fileURLToPath } from 'url';
 import {
+  AXES,
   RULES,
   analyzeSource,
   findUnsafeAssertions,
@@ -21,6 +22,7 @@ import {
   isExamplePath,
   isFixturePath,
   isNonProductionPath,
+  type Axis,
   type Severity,
   type UnsafeAssertionFinding
 } from './rules.ts';
@@ -33,9 +35,12 @@ const SEVERITIES: readonly Severity[] = ['critical', 'high', 'medium', 'low'];
 const OVERRIDE_SEVERITIES: ReadonlyArray<Severity | 'off'> = [...SEVERITIES, 'off'];
 /** Every rule id KarpeSlop reports itself. fresh_package_version comes from the registry check, not RULES. */
 const BUILT_IN_RULE_IDS: ReadonlySet<string> = new Set([...RULES.map(rule => rule.id), 'fresh_package_version']);
+/** Installing a version days after it was published is a judgment call, not a defect in the code. */
+const FRESH_PACKAGE_AXIS: Axis = 'soul';
 
 interface AISlopIssue {
   type: string;
+  axis: Axis;
   file: string;
   line: number;
   column: number;
@@ -47,6 +52,7 @@ interface AISlopIssue {
 
 interface ConsolidatedIssue {
   type: string;
+  axis: Axis;
   file: string;
   code: string;
   message: string;
@@ -59,6 +65,7 @@ interface DetectionPattern {
   pattern: RegExp;
   message: string;
   severity: Severity;
+  axis: Axis;
   fix?: string;
   learnMore?: string;
 }
@@ -68,6 +75,8 @@ interface CustomPatternConfig {
   pattern: string;
   message: string;
   severity: Severity;
+  /** Which axis of the slop index the pattern scores on. Defaults to soul: a custom pattern usually encodes a team's taste. */
+  axis?: Axis;
   description?: string;
   fix?: string;
   learnMore?: string;
@@ -86,6 +95,10 @@ interface ScanSummary {
   linesScanned: number;
   /** Lines outside test files: the denominator for finding density, since most rules skip tests. */
   applicationLinesScanned: number;
+}
+
+function isAxis(value: unknown): value is Axis {
+  return AXES.some(axis => axis.id === value);
 }
 
 function isSeverity(value: unknown): value is Severity {
@@ -186,6 +199,54 @@ export function hasOnlyFreshPackageWarnings(
 export function exitCodeFor(issues: ReadonlyArray<Pick<AISlopIssue, 'type' | 'severity'>>, failOn: Severity = 'high'): number {
   const threshold = SEVERITIES.indexOf(failOn);
   return issues.some(issue => issue.type !== 'fresh_package_version' && SEVERITIES.indexOf(issue.severity) <= threshold) ? 1 : 0;
+}
+
+const SEVERITY_WEIGHTS: Record<Severity, number> = { critical: 8, high: 4, medium: 2, low: 1 };
+
+export interface SlopIndexRule {
+  type: string;
+  findings: number;
+  points: number;
+}
+
+export interface SlopIndex {
+  /** Lines of application code the scores are relative to. */
+  applicationLines: number;
+  axes: Array<{ axis: Axis; score: number; rules: SlopIndexRule[] }>;
+  total: number;
+}
+
+/**
+ * Scores application-code findings on the three axes. Each rule adds
+ * `weight(severity) * ln(1 + findings per 1,000 lines)` to its axis: per 1,000
+ * lines so repositories of different sizes compare, and logarithmic so one
+ * rule repeated hundreds of times cannot outweigh several different kinds of
+ * slop. A rule's weight is that of its most severe finding.
+ */
+export function slopIndex(
+  findings: ReadonlyArray<Pick<AISlopIssue, 'type' | 'axis' | 'severity'>>,
+  applicationLines: number
+): SlopIndex {
+  const byRule = new Map<string, { axis: Axis; findings: number; weight: number }>();
+  for (const finding of findings) {
+    const entry = byRule.get(finding.type) ?? { axis: finding.axis, findings: 0, weight: 0 };
+    entry.findings++;
+    entry.weight = Math.max(entry.weight, SEVERITY_WEIGHTS[finding.severity]);
+    byRule.set(finding.type, entry);
+  }
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const axes = AXES.map(({ id }) => {
+    const rules = [...byRule.entries()]
+      .filter(([, entry]) => entry.axis === id)
+      .map(([type, entry]) => ({
+        type,
+        findings: entry.findings,
+        points: applicationLines > 0 ? round(entry.weight * Math.log1p((entry.findings * 1000) / applicationLines)) : 0
+      }))
+      .sort((a, b) => b.points - a.points || a.type.localeCompare(b.type));
+    return { axis: id, score: round(rules.reduce((sum, rule) => sum + rule.points, 0)), rules };
+  });
+  return { applicationLines, axes, total: round(axes.reduce((sum, axis) => sum + axis.score, 0)) };
 }
 
 /** A path.relative() result outside the root: `../x`, or on Windows a path on another drive (`D:\\x`). */
@@ -366,6 +427,9 @@ class AISlopDetector {
         if (!isSeverity(severity)) {
           throw new Error(`customPatterns[${i}].severity must be one of: ${SEVERITIES.join(', ')}`);
         }
+        if (pattern.axis !== undefined && !isAxis(pattern.axis)) {
+          throw new Error(`customPatterns[${i}].axis must be one of: ${AXES.map(axis => axis.id).join(', ')}`);
+        }
         try {
           new RegExp(source, 'gi');
         } catch {
@@ -376,6 +440,7 @@ class AISlopDetector {
           pattern: source,
           message,
           severity,
+          axis: isAxis(pattern.axis) ? pattern.axis : undefined,
           description: optionalString(pattern.description),
           fix: optionalString(pattern.fix),
           learnMore: optionalString(pattern.learnMore)
@@ -450,6 +515,7 @@ class AISlopDetector {
               ? `${customPattern.message} (${customPattern.description})`
               : customPattern.message,
             severity: customPattern.severity,
+            axis: customPattern.axis ?? 'soul',
             fix: customPattern.fix,
             learnMore: customPattern.learnMore
           });
@@ -639,10 +705,14 @@ class AISlopDetector {
     return uniqueRealFiles(resolved);
   }
 
-  private record(issue: Omit<AISlopIssue, 'severity'>, defaultSeverity: Severity): void {
+  private record(issue: Omit<AISlopIssue, 'severity' | 'axis'>, defaultSeverity: Severity): void {
     const severity = this.severityOf(issue.type, defaultSeverity);
     if (severity === 'off') return;
-    this.issues.push({ ...issue, severity });
+    this.issues.push({ ...issue, severity, axis: this.axisOf(issue.type) });
+  }
+
+  private axisOf(ruleId: string): Axis {
+    return getRule(ruleId)?.axis ?? this.customPatterns.find(pattern => pattern.id === ruleId)?.axis ?? FRESH_PACKAGE_AXIS;
   }
 
   /**
@@ -964,7 +1034,7 @@ class AISlopDetector {
     const counts = SEVERITIES.map(severity => `${this.issues.filter(issue => issue.severity === severity).length} ${severity}`);
     const files = new Set(this.issues.map(issue => issue.file)).size;
     const { applicationLinesScanned } = this.summary;
-    const applicationFindings = this.issues.filter(issue => this.lineCounts.has(issue.file) && !this.isNonProductionFile(issue.file)).length;
+    const applicationFindings = this.applicationIssues().length;
     const density = applicationLinesScanned > 0
       ? `, ${((applicationFindings / applicationLinesScanned) * 1000).toFixed(1)} per 1,000 lines of application code`
       : '';
@@ -972,7 +1042,29 @@ class AISlopDetector {
     if (hasOnlyFreshPackageWarnings(this.issues)) {
       console.log('Only package-age warnings were found.');
     }
+    if (applicationLinesScanned > 0) this.printSlopIndex();
     console.log('To turn a rule off or change its severity, use severityOverrides in .karpesloprc.json.');
+  }
+
+  /** Findings in application code: the ones finding density and the slop index count. */
+  private applicationIssues(): AISlopIssue[] {
+    return this.issues.filter(issue => this.lineCounts.has(issue.file) && !this.isNonProductionFile(issue.file));
+  }
+
+  getSlopIndex(): SlopIndex {
+    return slopIndex(this.applicationIssues(), this.summary.applicationLinesScanned);
+  }
+
+  private printSlopIndex(): void {
+    const index = this.getSlopIndex();
+    console.log('\nSlop index (application code, higher is worse):');
+    const names = new Map(AXES.map(entry => [entry.id, entry]));
+    for (const { axis, score, rules } of index.axes) {
+      const { name, label } = names.get(axis) ?? { name: axis, label: '' };
+      const top = rules.slice(0, 3).map(rule => rule.type).join(', ');
+      console.log(`  ${name.padEnd(6)} ${label.padEnd(20)} ${score.toFixed(1).padStart(6)}${top ? `  ${top}` : ''}`);
+    }
+    console.log(`  ${'Total'.padEnd(27)} ${index.total.toFixed(1).padStart(6)}\n`);
   }
 
   /**
@@ -1012,6 +1104,7 @@ class AISlopDetector {
       } else {
         issueMap.set(key, {
           type: issue.type,
+          axis: issue.axis,
           file: issue.file,
           code: issue.code,
           message: issue.message,
@@ -1053,8 +1146,10 @@ class AISlopDetector {
       uniqueIssues: consolidatedIssues.length,
       totalOccurrences: countOccurrences(consolidatedIssues),
       bySeverity,
+      slopIndex: this.getSlopIndex(),
       byType: Array.from(byTypeMap.entries()).map(([type, issues]) => ({
         type,
+        axis: issues[0].axis,
         occurrences: countOccurrences(issues),
         uniqueIssues: issues.length,
         sample: issues.slice(0, 3).map(issue => ({
@@ -1082,7 +1177,8 @@ export function splitCliArgs(args: readonly string[]): { flagArgs: string[]; tar
 }
 
 function printHelp(): void {
-  const ruleLines = RULES.map(rule => `  ${rule.id.padEnd(30)} ${rule.severity.padEnd(9)} ${rule.message}`);
+  const ruleLines = RULES.map(rule => `  ${rule.id.padEnd(30)} ${rule.severity.padEnd(9)} ${rule.axis.padEnd(6)} ${rule.message}`);
+  const axisLines = AXES.map(axis => `  ${axis.id.padEnd(6)} ${axis.name} (${axis.label})`);
   console.log(`
 Usage: karpeslop [options] [path...]
 
@@ -1105,9 +1201,13 @@ Exit codes:
   1 - Findings at the --fail-on severity (default high) or above
   2 - Critical findings (--strict only)
 
-Rules:
+Slop index:
+  Findings in application code are scored on three axes, per 1,000 lines:
+${axisLines.join('\n')}
+
+Rules (id, severity, axis):
 ${ruleLines.join('\n')}
-  ${'fresh_package_version'.padEnd(30)} ${'medium'.padEnd(9)} Dependency version was published very recently.
+  ${'fresh_package_version'.padEnd(30)} ${'medium'.padEnd(9)} ${FRESH_PACKAGE_AXIS.padEnd(6)} Dependency version was published very recently.
 
 Inline suppression comments are not supported. Change a rule's severity, or
 turn it off, with severityOverrides in .karpesloprc.json.

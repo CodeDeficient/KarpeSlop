@@ -18,6 +18,7 @@ import {
   pLimit,
   reportPathFrom,
   shouldAnalyzePathInQuietMode,
+  slopIndex,
   splitCliArgs,
   uniqueRealFiles,
   unknownFlags,
@@ -903,4 +904,78 @@ test('an invalid config stops the run with exit 1 instead of falling back to def
   assert.equal(result.status, 1, `stdout:"${result.stdout}" stderr:"${result.stderr}"`);
   assert.match(result.stderr, /KarpeSlop: Invalid config at .*\.karpesloprc\.json: customPatterns\[0\]\.severity must be one of/);
   assert.doesNotMatch(result.stdout, /Scanning/);
+});
+
+test('slop index scores per 1,000 lines, so repositories of different sizes compare', () => {
+  const findings = (count: number) => Array.from({ length: count }, () => ({ type: 'empty_catch', axis: 'lies' as const, severity: 'high' as const }));
+  const small = slopIndex(findings(2), 1_000);
+  const large = slopIndex(findings(200), 100_000);
+  assert.equal(small.total, large.total);
+  // weight 4 (high) * ln(1 + 2 per 1,000 lines)
+  assert.equal(small.axes.find(axis => axis.axis === 'lies')?.score, Math.round(4 * Math.log1p(2) * 100) / 100);
+  assert.deepEqual(small.axes.map(axis => axis.axis), ['noise', 'lies', 'soul']);
+  assert.equal(slopIndex(findings(3), 0).total, 0);
+});
+
+test('slop index: five kinds of slop outscore one rule repeated as often', () => {
+  const lines = 10_000;
+  const repeated = slopIndex(Array.from({ length: 100 }, () => ({ type: 'type_assertion', axis: 'soul' as const, severity: 'medium' as const })), lines);
+  const varied = slopIndex(['type_assertion', 'any_type_usage', 'non_null_assertion', 'blanket_eslint_disable', 'todo_comment']
+    .flatMap(type => Array.from({ length: 20 }, () => ({ type, axis: 'soul' as const, severity: 'medium' as const }))), lines);
+  assert.ok(varied.total > repeated.total, `varied ${varied.total} should exceed repeated ${repeated.total}`);
+  const soul = repeated.axes.find(axis => axis.axis === 'soul');
+  assert.deepEqual(soul?.rules, [{ type: 'type_assertion', findings: 100, points: soul?.score }]);
+});
+
+test('the report and summary give each finding an axis and print the slop index', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-index-'));
+  try {
+    fs.writeFileSync(path.join(dir, '.karpesloprc.json'), JSON.stringify({
+      customPatterns: [
+        { id: 'no_lodash', pattern: "from 'lodash'", message: 'Use lodash-es', severity: 'low' },
+        { id: 'no_mock_data', pattern: 'MOCK_DATA', message: 'Mock data in app code', severity: 'high', axis: 'lies' }
+      ]
+    }));
+    fs.writeFileSync(path.join(dir, 'app.ts'), [
+      "import _ from 'lodash';",
+      'export const rows = MOCK_DATA;',
+      'export function load() {',
+      '  try { return JSON.parse("{}"); } catch {}',
+      '}',
+      ''
+    ].join('\n'));
+    const log = t.mock.method(console, 'log', () => {});
+    const detector = new AISlopDetector(dir, undefined, async () => 'exists');
+    await detector.detect();
+    const output = log.mock.calls.map(call => String(call.arguments[0])).join('\n');
+    assert.match(output, /Slop index \(application code, higher is worse\):/);
+    const lies = output.split('\n').find(line => /^ +Lies +information quality +\d+\.\d/.test(line)) ?? '';
+    assert.match(lies, /\bempty_catch\b/);
+    assert.match(lies, /\bno_mock_data\b/);
+    assert.match(output, /Soul +style and taste +\d+\.\d .*\bno_lodash\b/);
+    const report = path.join(dir, 'report.json');
+    detector.exportResults(report);
+    const parsed = JSON.parse(fs.readFileSync(report, 'utf8'));
+    const axisOf = (type: string) => parsed.issues.find((issue: { type: string }) => issue.type === type)?.axis;
+    assert.equal(axisOf('empty_catch'), 'lies');
+    assert.equal(axisOf('no_mock_data'), 'lies');
+    assert.equal(axisOf('no_lodash'), 'soul');
+    assert.equal(parsed.slopIndex.applicationLines, 5);
+    assert.deepEqual(parsed.slopIndex.axes.map((axis: { axis: string }) => axis.axis), ['noise', 'lies', 'soul']);
+    assert.equal(parsed.byType.find((entry: { type: string }) => entry.type === 'empty_catch')?.axis, 'lies');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a custom pattern with an unknown axis is an invalid config', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karpeslop-axis-'));
+  try {
+    fs.writeFileSync(path.join(dir, '.karpesloprc.json'), JSON.stringify({
+      customPatterns: [{ id: 'x', pattern: 'x', message: 'm', severity: 'low', axis: 'taste' }]
+    }));
+    assert.throws(() => new AISlopDetector(dir), /customPatterns\[0\]\.axis must be one of: noise, lies, soul/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

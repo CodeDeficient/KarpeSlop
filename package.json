@@ -1,7 +1,7 @@
 {
   "name": "karpeslop",
   "version": "2.0.0",
-  "description": "A linter for the mistakes AI coding tools leave in TypeScript and JavaScript: imports that don't exist, missing packages, placeholder code, swallowed errors and unsafe casts.",
+  "description": "A slop index for TypeScript and JavaScript: finds the mistakes AI coding tools leave (imports that don't exist, placeholder code, swallowed errors, unsafe casts) and scores them on three axes: noise, lies and soul.",
   "type": "module",
   "packageManager": "npm@10.9.7",
   "bin": {
