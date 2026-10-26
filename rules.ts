@@ -12,9 +12,24 @@ import ts from 'typescript';
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 
+/**
+ * The three kinds of slop the index scores:
+ * - noise: text that adds length without information (Information Utility)
+ * - lies: code that claims to do something it doesn't (Information Quality)
+ * - soul: shortcuts that show no judgment behind the code (Style / Taste)
+ */
+export type Axis = 'noise' | 'lies' | 'soul';
+
+export const AXES: ReadonlyArray<{ id: Axis; name: string; label: string }> = [
+  { id: 'noise', name: 'Noise', label: 'information utility' },
+  { id: 'lies', name: 'Lies', label: 'information quality' },
+  { id: 'soul', name: 'Soul', label: 'style and taste' }
+];
+
 export interface RuleInfo {
   id: string;
   severity: Severity;
+  axis: Axis;
   /** One-line statement of what was found. Neutral: says nothing about who wrote it. */
   message: string;
   /** Why it matters, or what to check. */
@@ -40,6 +55,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'hallucinated_import',
     severity: 'critical',
+    axis: 'lies',
     message: 'Imported name is not exported by the module.',
     why: 'This import fails at build time or is undefined at runtime.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/modules/reference.html'
@@ -47,6 +63,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'nonexistent_package',
     severity: 'critical',
+    axis: 'lies',
     message: 'Imported package does not exist on the npm registry.',
     why: 'Names that models invent are a known target for package squatting. Do not install a package with this name without checking who published it.',
     fix: 'Remove the import and use a package you have verified.'
@@ -54,6 +71,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'undeclared_dependency',
     severity: 'high',
+    axis: 'lies',
     message: 'Imported package is not declared in package.json and is not installed.',
     why: 'The import cannot resolve on a clean install.',
     fix: 'Add the package to package.json if it is the one you meant, or remove the import.'
@@ -61,6 +79,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'placeholder_implementation',
     severity: 'high',
+    axis: 'lies',
     message: 'Function body is a placeholder.',
     why: 'The function returns a dummy value or throws instead of doing its job, so callers get wrong results without an error.',
     skipTests: true
@@ -68,6 +87,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'elided_code_comment',
     severity: 'high',
+    axis: 'lies',
     message: 'Comment stands in for code that was left out ("... rest of code").',
     why: 'Code was elided, usually when a snippet was pasted from a chat answer. Whatever it stood for is missing.',
     fix: 'Restore the omitted code or delete the comment if nothing is missing.'
@@ -75,6 +95,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'placeholder_value',
     severity: 'high',
+    axis: 'lies',
     message: 'String literal is a placeholder value (e.g. "YOUR_API_KEY").',
     why: 'The real value was never filled in. It usually belongs in configuration or an environment variable.',
     skipTests: true
@@ -82,6 +103,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'empty_catch',
     severity: 'high',
+    axis: 'lies',
     message: 'Error is caught and silently discarded.',
     why: 'Failures here leave no trace. If ignoring the error is intended, say why in a comment inside the block.',
     learnMore: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch',
@@ -90,6 +112,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'swallowed_error',
     severity: 'medium',
+    axis: 'lies',
     message: 'Error is caught, logged and then discarded.',
     why: 'Execution continues as if the operation succeeded, so callers and users never learn it failed. Rethrow, return a result the caller checks, or say in a comment why continuing is safe.',
     learnMore: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/try...catch',
@@ -98,6 +121,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'unsafe_type_assertion',
     severity: 'high',
+    axis: 'lies',
     message: "Value is cast to 'any'.",
     why: 'The cast turns off type checking for every later use of the value.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates',
@@ -106,6 +130,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'unsafe_double_type_assertion',
     severity: 'high',
+    axis: 'lies',
     message: 'Value is cast through another type (e.g. "as unknown as T").',
     why: 'A chained cast forces a conversion the compiler rejected. Validate the value at runtime or fix the source type instead.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#type-assertions',
@@ -114,6 +139,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'unsafe_object_assertion',
     severity: 'high',
+    axis: 'lies',
     message: 'Value is cast to an object type.',
     why: 'The compiler takes the shape on trust. If the value comes from outside the program (JSON, an API, storage), validate it instead.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
@@ -122,6 +148,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'unsafe_array_assertion',
     severity: 'high',
+    axis: 'lies',
     message: 'Value is cast to an array type.',
     why: 'The compiler takes the element type on trust. If the value comes from outside the program, validate it instead.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
@@ -130,6 +157,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'type_assertion',
     severity: 'medium',
+    axis: 'soul',
     message: 'Value is cast to another type.',
     why: 'The compiler takes the target type on trust. Prefer a type guard, a typed source, or "satisfies" when you only need to check the shape.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
@@ -138,6 +166,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'any_type_usage',
     severity: 'medium',
+    axis: 'soul',
     message: "Type is declared as 'any'.",
     why: "'any' turns off type checking wherever the value flows. 'unknown' keeps it on and forces a check before use.",
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/narrowing.html',
@@ -146,6 +175,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'ts_suppression',
     severity: 'medium',
+    axis: 'lies',
     message: 'Type errors are suppressed with @ts-ignore or @ts-nocheck.',
     why: 'The suppression hides the error permanently, including after the code around it changes.',
     fix: "Use '// @ts-expect-error <reason>' for a single line; it fails once the error is gone.",
@@ -154,6 +184,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'blanket_eslint_disable',
     severity: 'medium',
+    axis: 'soul',
     message: 'ESLint is disabled without naming a rule.',
     why: 'Every lint rule is off for this scope, not just the one that fired.',
     fix: 'Name the rule being disabled, e.g. "eslint-disable-next-line no-console".'
@@ -161,6 +192,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'unchecked_fetch_response',
     severity: 'medium',
+    axis: 'lies',
     message: 'fetch() response body is read without checking the HTTP status.',
     why: 'fetch() only rejects on network failure. A 404 or 500 response is read as if it succeeded.',
     fix: 'Check response.ok (or response.status) before reading the body.',
@@ -170,6 +202,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'non_null_assertion',
     severity: 'low',
+    axis: 'soul',
     message: "Non-null assertion ('!') on a value.",
     why: 'The compiler takes it on trust that the value is not null or undefined. Check it or narrow the type instead.',
     learnMore: 'https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#non-null-assertion-operator-postfix-',
@@ -178,6 +211,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'hedging_comment',
     severity: 'low',
+    axis: 'noise',
     message: 'Comment says the code is unverified ("should work", "hopefully").',
     why: 'Check the behavior and record what you found, or add a test.',
     skipTests: true
@@ -185,6 +219,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'restating_comment',
     severity: 'low',
+    axis: 'noise',
     message: 'Comment restates the next line of code.',
     why: 'It repeats what the code already says. Comments are most useful when they explain why.',
     skipTests: true
@@ -192,6 +227,7 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'filler_comment',
     severity: 'low',
+    axis: 'noise',
     message: 'Doc comment restates names ("@param id - the id", "@returns the result", "This function is used to ...").',
     why: 'It adds length without information. Say what is not obvious from the name, or remove it.',
     skipTests: true
@@ -199,12 +235,14 @@ export const RULES: readonly RuleInfo[] = [
   {
     id: 'todo_comment',
     severity: 'low',
+    axis: 'soul',
     message: 'TODO/FIXME/HACK marker.',
     why: 'Unfinished work. Link a tracking issue so it is not forgotten.'
   },
   {
     id: 'production_console_log',
     severity: 'low',
+    axis: 'noise',
     message: 'console.log/debug/info call in application code.',
     why: 'Usually leftover debugging output. Use your logger if the output is intended.',
     skipTests: true

@@ -5,6 +5,7 @@ All notable changes will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **The slop index is back, on three axes.** Every rule belongs to one: Noise (information utility), Lies (information quality) or Soul (style and taste). The summary ends with a score per axis and a total, and the JSON report adds `slopIndex` plus an `axis` on every issue and `byType` entry. Unlike the 1.x point total, the scores are per 1,000 lines of application code, so repositories of different sizes compare, and each rule counts logarithmically (`weight × ln(1 + findings per 1,000 lines)`), so one pattern repeated hundreds of times cannot outweigh several different kinds of slop. `customPatterns` take an optional `axis` (default `soul`). `--help` lists each rule's axis.
 - `--report=<path>` writes the JSON report somewhere other than `./ai-slop-report.json`, and `--no-report` skips it, so a scan no longer has to leave a file in the working tree.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
