@@ -949,8 +949,10 @@ test('the report and summary give each finding an axis and print the slop index'
     await detector.detect();
     const output = log.mock.calls.map(call => String(call.arguments[0])).join('\n');
     assert.match(output, /Slop index \(application code, higher is worse\):/);
-    assert.match(output, /Lies +information quality +\d+\.\d +(empty_catch|no_mock_data)/);
-    assert.match(output, /Soul +style and taste +\d+\.\d +no_lodash/);
+    const lies = output.split('\n').find(line => /^ +Lies +information quality +\d+\.\d/.test(line)) ?? '';
+    assert.match(lies, /\bempty_catch\b/);
+    assert.match(lies, /\bno_mock_data\b/);
+    assert.match(output, /Soul +style and taste +\d+\.\d .*\bno_lodash\b/);
     const report = path.join(dir, 'report.json');
     detector.exportResults(report);
     const parsed = JSON.parse(fs.readFileSync(report, 'utf8'));

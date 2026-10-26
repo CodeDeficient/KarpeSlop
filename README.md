@@ -36,7 +36,7 @@ Slop index (application code, higher is worse):
 
 KarpeSlop's own source has no findings and scores 0.
 
-Each rule adds `weight × ln(1 + findings per 1,000 lines)` to its axis, with weights of 8, 4, 2 and 1 for critical, high, medium and low. The scores use findings in application code only, not tests, and:
+Each rule adds `weight × ln(1 + findings per 1,000 lines)` to its axis, with weights of 8, 4, 2 and 1 for critical, high, medium and low. The scores use findings in application source files only, not tests or `package.json` (so `fresh_package_version` is reported but not scored), and:
 
 - are per 1,000 lines, so a large repository and a small one can be compared
 - grow with the logarithm of each rule's count, so one pattern repeated 500 times can't outweigh five different kinds of slop
