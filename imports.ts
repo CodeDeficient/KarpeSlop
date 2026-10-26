@@ -555,6 +555,9 @@ export async function checkImports(
         continue;
       }
 
+      // `declare module 'x';` with no body types every import from 'x' as any, so any name is valid.
+      if (moduleSymbol.declarations?.some(declaration => ts.isModuleDeclaration(declaration) && declaration.body === undefined)) continue;
+
       const exported = new Set(checker.getExportsOfModule(moduleSymbol).map(symbol => symbol.name));
       // Modules typed as `export = something` without members expose nothing we can check.
       // An ES module with no exports (`export {}`) is still checked.

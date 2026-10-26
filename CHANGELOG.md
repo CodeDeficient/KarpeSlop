@@ -10,6 +10,7 @@ All notable changes will be documented in this file.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
 
 ### Changed
+- `hallucinated_import` skips modules declared with a shorthand ambient declaration (`declare module 'lucide-react';`). TypeScript types every import from such a module as `any`, so any name is valid. A Next.js app with shims for `lucide-react` and `@radix-ui/react-slot` got 825 false critical findings, and `--strict` failed its build.
 - `undeclared_dependency` is not reported in `examples/` folders, whose readers install what each example needs (express's examples import `redis`). An example that imports a package that does not exist on npm is still reported as `nonexistent_package`.
 - `non_null_assertion` points at the `!` itself. Chained assertions such as `getElementById(id)!.textContent!` were both reported at the start of the expression.
 - A cast of `[]`, `{}` or `Object.keys(...)` to an array or object type is reported as `type_assertion` (medium), not `unsafe_array_assertion`/`unsafe_object_assertion` (high). `Object.keys(o) as Array<keyof typeof o>` is the standard way to type keys, since `Object.keys` returns `string[]`; ky uses it twice.
