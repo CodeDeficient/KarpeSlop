@@ -10,8 +10,8 @@ Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript 
 
 ### Upgrading from 1.x
 - Remove `severityOverrides` entries for the removed rule ids listed below. They are ignored now. The replacement ids are listed next to each removed rule.
-- CI that fails on any finding should expect exit 1 only for medium severity and above. `--strict` still exits 2 on critical findings.
-- Anything that read the slop score from the output should read the per-severity counts instead.
+- CI that fails on any finding should expect exit 1 only for high severity and above, or pass `--fail-on=low` to keep failing on everything. `--strict` still exits 2 on critical findings.
+- Anything that read the 1.x slop score should read `slopIndex` in the JSON report instead: a score per axis (`noise`, `lies`, `soul`) and a `total`, per 1,000 lines of application code. The numbers are on a different scale from the 1.x points and can't be compared with them.
 
 ### Breaking
 - **Rules rebuilt on the TypeScript AST.** Built-in rules no longer match lines of text, so strings, JSX text and multi-line code are handled correctly. User `customPatterns` are still line regexes.
