@@ -4,10 +4,33 @@ All notable changes will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-26
+
+Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript codebases (zustand `src`, TanStack Query `query-core/src` and `react-query/src`) and a file with eight planted mistakes typical of generated code. Before: 300 findings on the clean code, mostly false positives, and 1 of 8 planted mistakes caught. After: every finding on the clean code is a real cast, `any`, `!`, TODO or restating comment, and 8 of 8 planted mistakes are caught.
+
+### Upgrading from 1.x
+- Remove `severityOverrides` entries for the removed rule ids listed below. They are ignored now. The replacement ids are listed next to each removed rule.
+- CI that fails on any finding should expect exit 1 only for medium severity and above. `--strict` still exits 2 on critical findings.
+- Anything that read the slop score from the output should read the per-severity counts instead.
+
+### Breaking
+- **Rules rebuilt on the TypeScript AST.** Built-in rules no longer match lines of text, so strings, JSX text and multi-line code are handled correctly. User `customPatterns` are still line regexes.
+- **Removed rules** (they were unreliable or wrong): `redundant_self_explanatory_comment`, `excessive_boilerplate_comment`, `debug_log_with_comment`, `hallucinated_react_import` and `hallucinated_next_import` (replaced by `hallucinated_import`), `todo_implementation_placeholder` (replaced by `placeholder_implementation`), `assumption_comment`, `overconfident_comment`, `hedging_uncertainty_comment` (replaced by the narrower `hedging_comment`), `unnecessary_iife_wrapper`, `vibe_coded_ternary_abuse`, `magic_css_value`, `useEffect_derived_state`, `useEffect_empty_deps_suspicious`, `setState_in_loop`, `useCallback_no_deps`, `array_any_type`, `generic_any_type`, `function_param_any_type`, `index_signature_any` (all folded into `any_type_usage`), `missing_error_handling` (replaced by `unchecked_fetch_response`), `unsafe_member_access`, `complex_nested_conditionals`. Overrides for removed ids are ignored.
+- **Exit codes:** exit 1 now means a finding at high severity or above, and `--fail-on` moves the threshold. Medium and low findings are reported but don't fail the run.
+- **Score replaced.** The 1.x "Karpathy Slop Index" point total grew with repo size and wasn't comparable between projects. It is replaced by a slop index with a score per axis, per 1,000 lines of application code (see Added).
+- **`--quiet`** now includes `src/` and always skips test files.
+- **Folders named `types` are scanned.** Only `.d.ts` files are skipped as declarations. Generated `.ts` type files (Supabase, GraphQL codegen) under `types/` now get findings; add their path to `ignorePaths` to skip them.
+
 ### Added
 - **The slop index is back, on three axes.** Every rule belongs to one: Noise (information utility), Lies (information quality) or Soul (style and taste). The summary ends with a score per axis and a total, and the JSON report adds `slopIndex` plus an `axis` on every issue and `byType` entry. Unlike the 1.x point total, the scores are per 1,000 lines of application code, so repositories of different sizes compare, and each rule counts logarithmically (`weight × ln(1 + findings per 1,000 lines)`), so one pattern repeated hundreds of times cannot outweigh several different kinds of slop. Package-age warnings from `package.json` are reported but not scored. `customPatterns` take an optional `axis` (default `soul`). `--help` lists each rule's axis.
 - `--report=<path>` writes the JSON report somewhere other than `./ai-slop-report.json`, and `--no-report` skips it, so a scan no longer has to leave a file in the working tree.
 - `swallowed_error` (medium): a `catch` block whose only statements are `console` calls. The error is logged and the code carries on as if the operation succeeded. A comment in the block explaining why that is safe, a rethrow, or any other statement (such as `setError(e)`) means it is not reported, and so does a fallback after the `try`, as for `empty_catch`.
+- `hallucinated_import`: named imports checked against the module's real exports via the TypeScript checker, including multi-line and aliased imports. Falls back to a list of well-known mix-ups when types aren't installed, and suggests where the symbol really lives.
+- `nonexistent_package` and `undeclared_dependency`: bare imports checked against every `package.json` up the tree, `node_modules`, and the npm registry.
+- `placeholder_implementation`, `elided_code_comment`, `placeholder_value`, `empty_catch`, `unchecked_fetch_response`, `type_assertion`, `non_null_assertion`, `ts_suppression`, `blanket_eslint_disable`, `restating_comment`, `filler_comment`.
+- `<T>x` casts are detected alongside `x as T`.
+- `KARPESLOP_OFFLINE=1` skips npm registry requests.
+- `npm run typecheck`: the tool's own source is checked with `strict` and contains no casts, non-null assertions or `any`.
 
 ### Changed
 - `hallucinated_import` skips modules declared with a shorthand ambient declaration (`declare module 'lucide-react';`). TypeScript types every import from such a module as `any`, so any name is valid. A Next.js app with shims for `lucide-react` and `@radix-ui/react-slot` got 825 false critical findings, and `--strict` failed its build.
@@ -53,36 +76,9 @@ All notable changes will be documented in this file.
 - SECURITY.md lists the npm registry requests a scan makes and how to turn them off, and gives a real contact for vulnerability reports. It used to say the tool made no network requests.
 - `--quiet` matches core folders at any depth, so `packages/ui/src/` in a monorepo is scanned. Before, only folders at the repository root counted and a monorepo scanned no files.
 - `unsafe_type_assertion` reports the start of the cast (`value` in `value as any`), like the other cast rules, instead of the `any` keyword. A multi-line cast now reports the line it starts on.
-
-## [2.0.0] - 2026-10-25
-
-Rebuild of the built-in rules. Measured on two corpora: three mature TypeScript codebases (zustand `src`, TanStack Query `query-core/src` and `react-query/src`) and a file with eight planted mistakes typical of generated code. Before: 300 findings on the clean code, mostly false positives, and 1 of 8 planted mistakes caught. After: every finding on the clean code is a real cast, `any`, `!`, TODO or restating comment, and 8 of 8 planted mistakes are caught.
-
-### Upgrading from 1.x
-- Remove `severityOverrides` entries for the removed rule ids listed below. They are ignored now. The replacement ids are listed next to each removed rule.
-- CI that fails on any finding should expect exit 1 only for medium severity and above. `--strict` still exits 2 on critical findings.
-- Anything that read the slop score from the output should read the per-severity counts instead.
-
-### Breaking
-- **Rules rebuilt on the TypeScript AST.** Built-in rules no longer match lines of text, so strings, JSX text and multi-line code are handled correctly. User `customPatterns` are still line regexes.
-- **Removed rules** (they were unreliable or wrong): `redundant_self_explanatory_comment`, `excessive_boilerplate_comment`, `debug_log_with_comment`, `hallucinated_react_import` and `hallucinated_next_import` (replaced by `hallucinated_import`), `todo_implementation_placeholder` (replaced by `placeholder_implementation`), `assumption_comment`, `overconfident_comment`, `hedging_uncertainty_comment` (replaced by the narrower `hedging_comment`), `unnecessary_iife_wrapper`, `vibe_coded_ternary_abuse`, `magic_css_value`, `useEffect_derived_state`, `useEffect_empty_deps_suspicious`, `setState_in_loop`, `useCallback_no_deps`, `array_any_type`, `generic_any_type`, `function_param_any_type`, `index_signature_any` (all folded into `any_type_usage`), `missing_error_handling` (replaced by `unchecked_fetch_response`), `unsafe_member_access`, `complex_nested_conditionals`. Overrides for removed ids are ignored.
-- **Exit codes:** exit 1 now means a finding at medium severity or above. Low-severity findings are informational.
-- **Score removed.** The "Karpathy Slop Index" point total grew with repo size and wasn't comparable between projects. The summary now reports findings by severity and per 1,000 lines.
-- **`--quiet`** now includes `src/` and always skips test files.
-- **Folders named `types` are scanned.** Only `.d.ts` files are skipped as declarations. Generated `.ts` type files (Supabase, GraphQL codegen) under `types/` now get findings; add their path to `ignorePaths` to skip them.
-
-### Added
-- `hallucinated_import`: named imports checked against the module's real exports via the TypeScript checker, including multi-line and aliased imports. Falls back to a list of well-known mix-ups when types aren't installed, and suggests where the symbol really lives.
-- `nonexistent_package` and `undeclared_dependency`: bare imports checked against every `package.json` up the tree, `node_modules`, and the npm registry.
-- `placeholder_implementation`, `elided_code_comment`, `placeholder_value`, `empty_catch`, `unchecked_fetch_response`, `type_assertion`, `non_null_assertion`, `ts_suppression`, `blanket_eslint_disable`, `restating_comment`, `filler_comment`.
-- `<T>x` casts are detected alongside `x as T`.
-- `KARPESLOP_OFFLINE=1` skips npm registry requests.
-- `npm run typecheck`: the tool's own source is checked with `strict` and contains no casts, non-null assertions or `any`.
-
-### Changed
 - Messages describe the code, not its author. Fix text is only shown when the fix is certain; otherwise the finding says what to check and links the relevant docs.
-- Removed the Karpathy attribution, quote and trademark symbol from the README, package description and CLI output.
-- Removed the unused `npm run build` script, `babel.config.json` and the `@babel/*` devDependencies. The CLI runs `ai-slop-detector.ts` through tsx, so nothing used the `karpeslop-bin.js` it produced.
+- Removed the Karpathy quote and the trademark symbol from the README, package description and CLI output. The README still credits him with the slop index idea.
+- Removed `babel.config.json`, the `@babel/*` devDependencies and the Babel-built `karpeslop-bin.js`. `npm run build` now compiles the TypeScript sources to `dist/` with `tsc`.
 
 ### Fixed
 - One failed package age check no longer discards the results of all the others. The failure is printed with the package name and version.
