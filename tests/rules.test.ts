@@ -607,6 +607,21 @@ test('checkImports: names missing from typed modules are reported, including mul
   }
 });
 
+test('checkImports: a shorthand ambient module (declare module \'x\';) accepts any name', async () => {
+  // shadcn and Next.js projects add shims like this; TypeScript types every import from them as any.
+  const dir = makeProject({
+    ...fakeReact,
+    'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true }, include: ['src', 'types'] }),
+    'types/react.d.ts': "declare module 'react';\n",
+    'src/a.tsx': "import { useState, AnythingAtAll } from 'react';\nimport React from 'react';\n"
+  });
+  try {
+    assert.deepEqual(await checkImports([path.join(dir, 'src/a.tsx')], dir, registry), []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkImports: a default import from a module with no default export is reported', async () => {
   const dir = makeProject({
     'package.json': JSON.stringify({ name: 'app', dependencies: { esm: '1.0.0', cjs: '1.0.0', cjsnamed: '1.0.0', withdefault: '1.0.0' } }),
